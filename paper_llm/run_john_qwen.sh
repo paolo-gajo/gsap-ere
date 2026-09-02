@@ -15,6 +15,11 @@ if [[ "${zero_icl}" != "0" && "${zero_icl}" != "1" ]]; then
   echo "error: ZERO_ICL must be 0 or 1" >&2
   exit 1
 fi
+re_shots="${RE_SHOTS:-1}"
+if [[ "${re_shots}" != "1" && "${re_shots}" != "5" ]]; then
+  echo "error: RE_SHOTS must be 1 or 5" >&2
+  exit 1
+fi
 if [[ "${think}" == "1" ]]; then
   mode_suffix="-thinking"
   default_ner_num_predict=4096
@@ -29,6 +34,9 @@ fi
 if [[ "${zero_icl}" == "1" ]]; then
   icl_suffix="-zero-icl"
   icl_args=(--ner-shots 0 --re-shots 0)
+elif [[ "${re_shots}" == "5" ]]; then
+  icl_suffix="-re-5shot"
+  icl_args=(--ner-shots 10 --re-shots 5)
 else
   icl_suffix=""
   icl_args=()

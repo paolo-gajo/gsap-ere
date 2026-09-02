@@ -322,33 +322,59 @@ def select_ner_examples(
     return selected
 
 
-def select_re_example(
+def select_re_examples(
     subject: Entity,
     object_: Entity,
     examples: list[PairExample],
     by_signature: dict[tuple[str, str], list[int]],
     records: list[SentenceRecord],
     scores: Any,
-) -> PairExample:
-    candidate_indices = by_signature.get((subject.type, object_.type))
-    if not candidate_indices:
-        candidate_indices = list(range(len(examples)))
-    if not candidate_indices:
+    k: int,
+    pool_size: int,
+) -> list[PairExample]:
+    if not examples:
         raise RuntimeError("training data contains no ordered entity pair for an RE example")
-    best_index = min(
-        candidate_indices,
-        key=lambda index: (
-            -float(scores[examples[index].record_index]),
-            records[examples[index].record_index].doc_id,
-            records[examples[index].record_index].sentence_id,
-            examples[index].subject.start,
-            examples[index].subject.end,
-            examples[index].object.start,
-            examples[index].object.end,
-            examples[index].label,
-        ),
-    )
-    return examples[best_index]
+
+    def rank_key(index: int) -> tuple[Any, ...]:
+        example = examples[index]
+        record = records[example.record_index]
+        return (
+            -float(scores[example.record_index]),
+            record.doc_id,
+            record.sentence_id,
+            example.subject.start,
+            example.subject.end,
+            example.object.start,
+            example.object.end,
+            example.label,
+        )
+
+    preferred = sorted(by_signature.get((subject.type, object_.type), []), key=rank_key)
+    ranked = preferred
+    if len(ranked) < k:
+        preferred_set = set(preferred)
+        ranked.extend(
+            index
+            for index in sorted(range(len(examples)), key=rank_key)
+            if index not in preferred_set
+        )
+    remaining = ranked[: max(k, min(pool_size, len(ranked)))]
+    selected: list[int] = []
+    covered: set[str] = set()
+    while remaining and len(selected) < k:
+        best = min(
+            remaining,
+            key=lambda index: (
+                -(examples[index].label not in covered),
+                *rank_key(index),
+            ),
+        )
+        selected.append(best)
+        covered.add(examples[best].label)
+        remaining.remove(best)
+    if len(selected) != k:
+        raise RuntimeError(f"could select only {len(selected)} of {k} RE examples")
+    return [examples[index] for index in selected]
 
 
 def entity_definitions_text() -> str:
@@ -415,16 +441,13 @@ def build_re_prompt(
     target: SentenceRecord,
     subject: Entity,
     object_: Entity,
-    example_record: SentenceRecord | None,
-    example: PairExample | None,
+    examples: list[tuple[SentenceRecord, PairExample]],
     template: str,
 ) -> str:
-    if (example_record is None) != (example is None):
-        raise ValueError("RE example record and annotation must both be present or absent")
-    example_block = ""
-    if example_record is not None and example is not None:
-        example_block = (
-            "## Example 1\n\n"
+    blocks = []
+    for number, (example_record, example) in enumerate(examples, start=1):
+        blocks.append(
+            f"## Example {number}\n\n"
             f"Input: {json.dumps(pair_input(example_record, example.subject, example.object), ensure_ascii=False)}\n\n"
             f"Output: {json.dumps({'label': example.label})}"
         )
@@ -432,7 +455,7 @@ def build_re_prompt(
         template,
         {
             "LABEL_DEFINITIONS": relation_definitions_text(),
-            "FEW_SHOT_EXAMPLES": example_block,
+            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks),
             "MAIN_INPUT": json.dumps(pair_input(target, subject, object_), ensure_ascii=False),
         },
     )
@@ -716,8 +739,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-    if (args.ner_shots, args.re_shots) not in {(10, 1), (0, 0)}:
-        parser.error("supported ICL configurations are --ner-shots 10 --re-shots 1 or both zero")
+    if (args.ner_shots, args.re_shots) not in {(10, 1), (10, 5), (0, 0)}:
+        parser.error(
+            "supported ICL configurations are --ner-shots 10 with --re-shots 1 or 5, "
+            "or both zero"
+        )
     if args.resume and args.overwrite:
         parser.error("--resume and --overwrite are mutually exclusive")
     return args
@@ -725,7 +751,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    zero_icl = args.ner_shots == 0
+    zero_icl = args.ner_shots == 0 and args.re_shots == 0
     started_at = utc_now()
     wall_start = time.monotonic()
     output_dir = args.output_dir.resolve()
@@ -837,20 +863,23 @@ def main() -> None:
                 if subject_index == object_index:
                     continue
                 pair_number += 1
-                example: PairExample | None = None
-                example_record: SentenceRecord | None = None
+                examples: list[PairExample] = []
                 if not zero_icl:
-                    example = select_re_example(
+                    examples = select_re_examples(
                         subject,
                         object_,
                         pair_examples,
                         pairs_by_signature,
                         training,
                         similarities[target_index],
+                        args.re_shots,
+                        args.retrieval_pool_size,
                     )
-                    example_record = training[example.record_index]
+                prompt_examples = [
+                    (training[example.record_index], example) for example in examples
+                ]
                 prompt = build_re_prompt(
-                    target, subject, object_, example_record, example, re_template
+                    target, subject, object_, prompt_examples, re_template
                 )
                 key = f"re:{target.sentence_id}:{subject_index}:{object_index}"
                 print(
@@ -871,7 +900,8 @@ def main() -> None:
                         "token_count": len(target.tokens),
                         "subject_index": subject_index,
                         "object_index": object_index,
-                        "example_key": example_record.key if example_record else None,
+                        "example_key": prompt_examples[0][0].key if prompt_examples else None,
+                        "example_keys": [record.key for record, _ in prompt_examples],
                     },
                 )
                 resumed_calls += int(resumed)
@@ -886,17 +916,39 @@ def main() -> None:
                         "subject_index": subject_index,
                         "object_index": object_index,
                         "example": None
-                        if example_record is None or example is None
+                        if not prompt_examples
                         else {
-                            "document_id": example_record.doc_id,
-                            "sentence_id": example_record.sentence_id,
-                            "subject": entity_dict(example.subject, example_record),
-                            "object": entity_dict(example.object, example_record),
-                            "label": example.label,
+                            "document_id": prompt_examples[0][0].doc_id,
+                            "sentence_id": prompt_examples[0][0].sentence_id,
+                            "subject": entity_dict(
+                                prompt_examples[0][1].subject, prompt_examples[0][0]
+                            ),
+                            "object": entity_dict(
+                                prompt_examples[0][1].object, prompt_examples[0][0]
+                            ),
+                            "label": prompt_examples[0][1].label,
                             "cosine_similarity": round(
-                                float(similarities[target_index][example.record_index]), 9
+                                float(
+                                    similarities[target_index][
+                                        prompt_examples[0][1].record_index
+                                    ]
+                                ),
+                                9,
                             ),
                         },
+                        "examples": [
+                            {
+                                "document_id": record.doc_id,
+                                "sentence_id": record.sentence_id,
+                                "subject": entity_dict(example.subject, record),
+                                "object": entity_dict(example.object, record),
+                                "label": example.label,
+                                "cosine_similarity": round(
+                                    float(similarities[target_index][example.record_index]), 9
+                                ),
+                            }
+                            for record, example in prompt_examples
+                        ],
                     }
                 )
 
@@ -950,7 +1002,12 @@ def main() -> None:
             "re_shots": args.re_shots,
             "re_reranking": None
             if zero_icl
-            else "highest sentence cosine among matching ordered entity-type signature",
+            else (
+                "greedy maximum new relation-label coverage within matching ordered "
+                "entity-type signature, cosine tie-break"
+                if args.re_shots > 1
+                else "highest sentence cosine among matching ordered entity-type signature"
+            ),
         },
         "training_source": None if zero_icl else str(args.training_data),
         "excluded_document_id": None if zero_icl else args.document_id,

@@ -14,4 +14,8 @@ in `trace.jsonl`.
 Zero-ICL runs store empty NER example lists and `null` RE examples in
 `retrieval.json`; no retriever or training demonstration pool is used.
 
+Five-shot RE runs store all five demonstrations for each candidate under the
+`examples` field in `retrieval.json`; `example` remains as a compatibility
+alias for the first item.
+
 These results are methodologically separate from `zero_shot/results/`.
