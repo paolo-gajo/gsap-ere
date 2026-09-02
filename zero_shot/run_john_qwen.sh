@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Custom full-article zero-shot runner; not the paper's LLM pipeline.
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

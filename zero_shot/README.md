@@ -2,6 +2,9 @@
 
 This directory contains one annotation-free GSAP-ERE document, a pasteable zero-shot prompt, and an exact-match scorer.
 
+This is the custom full-article experiment. The paper's sentence-level,
+few-shot LLM pipeline is reconstructed separately in `paper_llm/`.
+
 ## Files
 
 - `article.txt`: readable plain text with all 44 retained dataset segments and no labels or relations.
