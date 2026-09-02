@@ -15,6 +15,10 @@ GSAP-ERE entity mentions. Assign exactly one relation label or `NIL`.
 4. Use `NIL` when no listed relation holds in this direction.
 5. Return one JSON object with only a `label` field and no other text.
 
+# Full Article Context
+
+{{FULL_ARTICLE_CONTEXT}}
+
 # Few-Shot Examples
 
 {{FEW_SHOT_EXAMPLES}}

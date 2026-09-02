@@ -63,6 +63,16 @@ paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/
 
 Inference is resumable at the individual NER or RE prompt level.
 
+To include the sentence-labelled full article before the few-shot examples in
+every NER and RE prompt:
+
+```bash
+FULL_ARTICLE_CONTEXT=1 bash paper_llm/run_john_qwen.sh
+```
+
+This uses a separate `*-full-article-*` result directory.
+Disabled optional sections are rendered as `N/A`.
+
 To run the same pipeline with Qwen3.8 thinking enabled:
 
 ```bash

@@ -15,6 +15,11 @@ if [[ "${zero_icl}" != "0" && "${zero_icl}" != "1" ]]; then
   echo "error: ZERO_ICL must be 0 or 1" >&2
   exit 1
 fi
+full_article_context="${FULL_ARTICLE_CONTEXT:-0}"
+if [[ "${full_article_context}" != "0" && "${full_article_context}" != "1" ]]; then
+  echo "error: FULL_ARTICLE_CONTEXT must be 0 or 1" >&2
+  exit 1
+fi
 re_shots="${RE_SHOTS:-1}"
 if [[ "${re_shots}" != "1" && "${re_shots}" != "5" ]]; then
   echo "error: RE_SHOTS must be 1 or 5" >&2
@@ -41,7 +46,14 @@ else
   icl_suffix=""
   icl_args=()
 fi
-default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john${mode_suffix}${icl_suffix}-00016_2106_09462"
+if [[ "${full_article_context}" == "1" ]]; then
+  context_suffix="-full-article"
+  context_args=(--full-article-context)
+else
+  context_suffix=""
+  context_args=()
+fi
+default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john${mode_suffix}${icl_suffix}${context_suffix}-00016_2106_09462"
 result_dir="${RESULT_DIR:-${default_result_dir}}"
 ner_num_predict="${NER_NUM_PREDICT:-${default_ner_num_predict}}"
 re_num_predict="${RE_NUM_PREDICT:-${default_re_num_predict}}"
@@ -151,6 +163,7 @@ fi
   --re-num-predict "${re_num_predict}" \
   "${think_args[@]}" \
   "${icl_args[@]}" \
+  "${context_args[@]}" \
   "${inference_mode[@]}"
 
 "${venv_python}" "${script_dir}/evaluate.py" \

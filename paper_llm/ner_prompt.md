@@ -17,6 +17,10 @@ information extraction task. Extract every qualifying contiguous token span.
    must contain integer `start`, integer `end`, and string `type`. Return an
    empty array when the sentence contains no entity.
 
+# Full Article Context
+
+{{FULL_ARTICLE_CONTEXT}}
+
 # Few-Shot Examples
 
 {{FEW_SHOT_EXAMPLES}}

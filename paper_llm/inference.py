@@ -214,6 +214,13 @@ def indexed_tokens(record: SentenceRecord) -> list[list[Any]]:
     return [[index, token] for index, token in enumerate(record.tokens)]
 
 
+def format_full_article_context(records: list[SentenceRecord]) -> str:
+    return "\n\n".join(
+        f"[Sentence {record.sentence_id}] {record.text}"
+        for record in sorted(records, key=lambda record: record.sentence_id)
+    )
+
+
 def entity_dict(entity: Entity, record: SentenceRecord) -> dict[str, Any]:
     return {
         "start": entity.start,
@@ -405,6 +412,7 @@ def build_ner_prompt(
     target: SentenceRecord,
     examples: list[SentenceRecord],
     template: str,
+    full_article_context: str = "",
 ) -> str:
     blocks = []
     for number, example in enumerate(examples, start=1):
@@ -423,7 +431,8 @@ def build_ner_prompt(
         template,
         {
             "LABEL_DEFINITIONS": entity_definitions_text(),
-            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks),
+            "FULL_ARTICLE_CONTEXT": full_article_context or "N/A",
+            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks) or "N/A",
             "MAIN_INPUT": json.dumps(indexed_tokens(target), ensure_ascii=False),
         },
     )
@@ -443,6 +452,7 @@ def build_re_prompt(
     object_: Entity,
     examples: list[tuple[SentenceRecord, PairExample]],
     template: str,
+    full_article_context: str = "",
 ) -> str:
     blocks = []
     for number, (example_record, example) in enumerate(examples, start=1):
@@ -455,7 +465,8 @@ def build_re_prompt(
         template,
         {
             "LABEL_DEFINITIONS": relation_definitions_text(),
-            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks),
+            "FULL_ARTICLE_CONTEXT": full_article_context or "N/A",
+            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks) or "N/A",
             "MAIN_INPUT": json.dumps(pair_input(target, subject, object_), ensure_ascii=False),
         },
     )
@@ -732,6 +743,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--think", action="store_true")
     parser.add_argument(
+        "--full-article-context",
+        action="store_true",
+        help="include the full target article before the few-shot examples",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=script_dir / "results" / "qwen3.8-27b-ollama-john-00016_2106_09462",
@@ -801,6 +817,9 @@ def main() -> None:
 
     ner_template = args.ner_template.read_text(encoding="utf-8")
     re_template = args.re_template.read_text(encoding="utf-8")
+    full_article_context = (
+        format_full_article_context(targets) if args.full_article_context else ""
+    )
     trace = load_trace(trace_path) if args.resume else {}
     predictions_by_sentence: list[list[Entity]] = []
     ner_retrieval: list[dict[str, Any]] = []
@@ -817,7 +836,12 @@ def main() -> None:
                 args.retrieval_pool_size,
             )
         examples = [training[index] for index in selected_indices]
-        prompt = build_ner_prompt(target, examples, ner_template)
+        prompt = build_ner_prompt(
+            target,
+            examples,
+            ner_template,
+            full_article_context=full_article_context,
+        )
         key = f"ner:{target.sentence_id}"
         print(f"[NER {target_index + 1}/{len(targets)}] sentence {target.sentence_id}", flush=True)
         serialized, resumed = ollama_call(
@@ -879,7 +903,12 @@ def main() -> None:
                     (training[example.record_index], example) for example in examples
                 ]
                 prompt = build_re_prompt(
-                    target, subject, object_, prompt_examples, re_template
+                    target,
+                    subject,
+                    object_,
+                    prompt_examples,
+                    re_template,
+                    full_article_context=full_article_context,
                 )
                 key = f"re:{target.sentence_id}:{subject_index}:{object_index}"
                 print(
@@ -1068,6 +1097,7 @@ def main() -> None:
         "request": {
             "format": "json",
             "think": args.think,
+            "full_article_context": args.full_article_context,
             "temperature": 0.0,
             "num_ctx": args.num_ctx,
             "ner_num_predict": args.ner_num_predict,
