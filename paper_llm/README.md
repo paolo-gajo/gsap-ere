@@ -57,3 +57,15 @@ paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/
 ```
 
 Inference is resumable at the individual NER or RE prompt level.
+
+To run the same pipeline with Qwen3.8 thinking enabled:
+
+```bash
+THINK=1 bash paper_llm/run_john_qwen.sh
+```
+
+This writes to the separate
+`paper_llm/results/qwen3.8-27b-ollama-john-thinking-00016_2106_09462/`
+directory. Thinking text is retained in `trace.jsonl`. The generation caps are
+raised from 2,048/64 to 4,096/4,096 tokens for NER/RE so the thinking tokens do
+not consume the short structured-answer allowance.

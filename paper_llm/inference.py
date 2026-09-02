@@ -575,6 +575,8 @@ def ollama_call(
     if previous is not None:
         if previous.get("prompt_sha256") != prompt_hash:
             raise RuntimeError(f"resume prompt changed for {key}; use a fresh output directory")
+        if bool(previous.get("think", False)) != args.think:
+            raise RuntimeError(f"resume thinking mode changed for {key}; use a fresh output directory")
         return previous.get("prediction"), True
 
     num_predict = args.ner_num_predict if stage == "ner" else args.re_num_predict
@@ -583,7 +585,7 @@ def ollama_call(
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "format": "json",
-        "think": False,
+        "think": args.think,
         "keep_alive": args.keep_alive,
         "options": {
             "temperature": 0.0,
@@ -613,12 +615,16 @@ def ollama_call(
         "prompt_sha256": prompt_hash,
         "prompt": prompt,
         "raw_response": content,
+        "think": args.think,
         "prediction": serialized_prediction,
         "warnings": warnings,
         "wall_seconds": round(wall_seconds, 6),
         "ollama_metrics": response_metrics(response),
         **metadata,
     }
+    message = response.get("message")
+    if isinstance(message, dict) and isinstance(message.get("thinking"), str):
+        event["raw_thinking"] = message["thinking"]
     append_trace(trace_path, event)
     trace[key] = event
     return serialized_prediction, False
@@ -697,6 +703,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--re-num-predict", type=int, default=64)
     parser.add_argument("--keep-alive", default="30m")
     parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--think", action="store_true")
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -965,7 +972,7 @@ def main() -> None:
         "model": {
             "requested": args.model,
             "ollama_record": model_record(tags, args.model),
-            "think": False,
+            "think": args.think,
         },
         "retrieval": {
             "model": args.retriever,
@@ -976,6 +983,7 @@ def main() -> None:
         },
         "request": {
             "format": "json",
+            "think": args.think,
             "temperature": 0.0,
             "num_ctx": args.num_ctx,
             "ner_num_predict": args.ner_num_predict,

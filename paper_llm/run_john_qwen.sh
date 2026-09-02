@@ -5,7 +5,25 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 model="${MODEL:-qwen3.8:27b}"
 base_url="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
-result_dir="${RESULT_DIR:-${script_dir}/results/qwen3.8-27b-ollama-john-00016_2106_09462}"
+think="${THINK:-0}"
+if [[ "${think}" != "0" && "${think}" != "1" ]]; then
+  echo "error: THINK must be 0 or 1" >&2
+  exit 1
+fi
+if [[ "${think}" == "1" ]]; then
+  default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john-thinking-00016_2106_09462"
+  default_ner_num_predict=4096
+  default_re_num_predict=4096
+  think_args=(--think)
+else
+  default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john-00016_2106_09462"
+  default_ner_num_predict=2048
+  default_re_num_predict=64
+  think_args=()
+fi
+result_dir="${RESULT_DIR:-${default_result_dir}}"
+ner_num_predict="${NER_NUM_PREDICT:-${default_ner_num_predict}}"
+re_num_predict="${RE_NUM_PREDICT:-${default_re_num_predict}}"
 venv_dir="${PAPER_LLM_VENV:-${script_dir}/.venv}"
 uv_version="0.12.9"
 uv_bin="${HOME}/.local/bin/uv"
@@ -108,6 +126,9 @@ fi
   --model "${model}" \
   --base-url "${base_url}" \
   --output-dir "${result_dir}" \
+  --ner-num-predict "${ner_num_predict}" \
+  --re-num-predict "${re_num_predict}" \
+  "${think_args[@]}" \
   "${inference_mode[@]}"
 
 "${venv_python}" "${script_dir}/evaluate.py" \

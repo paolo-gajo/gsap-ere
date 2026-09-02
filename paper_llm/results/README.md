@@ -8,4 +8,7 @@ Each directory here contains one sentence-level, two-stage LLM pipeline run:
 - `retrieval.json`: every selected training demonstration and similarity; and
 - `trace.jsonl`: exact prompts, raw responses, timings, and parsing warnings.
 
+Thinking-enabled runs also store each response's separate `raw_thinking` text
+in `trace.jsonl`.
+
 These results are methodologically separate from `zero_shot/results/`.
