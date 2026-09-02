@@ -22,6 +22,11 @@ The runner uses:
 - temperature zero; and
 - the `gsapere==0.2.4` authors' package for exact NER, RE, and RE+ scoring.
 
+Across all 100 documents, the `Qwen/Qwen3.8-27B` tokenizer gives a minimum of
+1,231 tokens, maximum of 40,395, mean of 8,058.01, and population standard
+deviation of 5,612.47. This counts detokenized dataset segments joined by blank
+lines, without special tokens.
+
 ## Reconstruction boundary
 
 The paper points to LLM code and Appendix A.3 prompts that are not present in
