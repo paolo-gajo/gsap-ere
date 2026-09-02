@@ -1,0 +1,482 @@
+<div id="gsap-ere-article-figure">
+  <header class="figure-head">
+    <h2>GSAP-ERE document 00016_2106_09462.txt</h2>
+    <div class="viz-row figure-key" aria-label="Diagram key">
+      <span class="key-item"><span class="entity-key" aria-hidden="true"></span>Entity span</span>
+      <span class="key-item"><span class="relation-key" aria-hidden="true">labeled →</span>Directed relation</span>
+      <span class="text-muted">125 entity annotations · 59 relations</span>
+    </div>
+    <div class="text-small text-muted">Tokenized article body · four annotation-free segments replaced by […]</div>
+  </header>
+  <main class="paper" aria-label="Annotated article body"></main>
+</div>
+
+<style>
+  #gsap-ere-article-figure {
+    width: 100%;
+    color-scheme: light;
+    --gsap-text: CanvasText;
+    --gsap-background: Canvas;
+    --gsap-muted: GrayText;
+    --gsap-highlight: Mark;
+    --gsap-highlight-text: MarkText;
+    --gsap-edge: LinkText;
+    color: var(--gsap-text);
+    background: var(--gsap-background);
+  }
+
+  #gsap-ere-article-figure .figure-head {
+    margin-bottom: 1rem;
+  }
+
+  #gsap-ere-article-figure .figure-head h2 {
+    margin-bottom: .35rem;
+  }
+
+  #gsap-ere-article-figure .figure-key {
+    justify-content: flex-start;
+    gap: 1rem;
+    margin-bottom: .2rem;
+  }
+
+  #gsap-ere-article-figure .key-item {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+  }
+
+  #gsap-ere-article-figure .entity-key {
+    width: 1.9rem;
+    height: .85rem;
+    display: inline-block;
+    background: var(--gsap-highlight);
+    border-bottom: 2px solid var(--gsap-edge);
+  }
+
+  #gsap-ere-article-figure .relation-key {
+    color: var(--gsap-edge);
+    font-weight: 500;
+  }
+
+  #gsap-ere-article-figure .figure-head .text-muted {
+    color: var(--gsap-muted);
+  }
+
+  #gsap-ere-article-figure .paper {
+    width: 100%;
+  }
+
+  #gsap-ere-article-figure .sentence {
+    width: 100%;
+    margin: 0;
+  }
+
+  #gsap-ere-article-figure .sentence svg {
+    width: 100%;
+    display: block;
+    overflow: visible;
+  }
+
+  #gsap-ere-article-figure .sentence .entity-box {
+    fill: var(--gsap-highlight);
+    stroke: var(--gsap-edge);
+    stroke-width: 2;
+  }
+
+  #gsap-ere-article-figure .sentence .body-token {
+    fill: var(--gsap-text);
+    font-size: 14px;
+  }
+
+  #gsap-ere-article-figure .sentence .relation-label {
+    fill: var(--gsap-text);
+    font-size: 12px;
+  }
+
+  #gsap-ere-article-figure .sentence .entity-token {
+    fill: var(--gsap-highlight-text);
+    font-weight: 500;
+  }
+
+  #gsap-ere-article-figure .sentence .relation-path {
+    fill: none;
+    stroke: var(--gsap-edge);
+    stroke-width: 2;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  #gsap-ere-article-figure .sentence .relation-label-bg {
+    fill: var(--gsap-background);
+    opacity: .96;
+  }
+
+  #gsap-ere-article-figure .sentence .relation-arrowhead {
+    fill: var(--gsap-edge);
+  }
+
+  #gsap-ere-article-figure .ellipsis {
+    text-align: center;
+    color: var(--gsap-muted);
+    margin: .45rem 0 .7rem;
+  }
+</style>
+
+<script>
+(function () {
+  "use strict";
+
+  const DATA = [
+    {"i":0,"t":["Extracting","opinions","from","texts","has","gathered","a","lot","of","interest","in","the","last","years",",","as","we","are","experiencing","an","unprecedented","volume","of","usergenerated","content","in","social","networks","and","other","places","."],"e":[[3,3,"DatasetGeneric"],[23,24,"DatasetGeneric"]],"r":[[23,24,3,3,"hasInstanceType"]]},
+    {"i":1,"t":["A","problem","that","social","researchers","find","in","using","opinion","mining","tools","is","that","they","are","usually","behind","commercial","APIs","and","unavailable","for","other","languages","than","English","."],"e":[[8,9,"Task"]],"r":[]},
+    {"i":2,"t":["To","address","these","issues",",","we","present","pysentimiento",",","a","multilingual","Python","toolkit","for","Sentiment","Analysis","and","other","Social","NLP","tasks","."],"e":[[7,7,"Method"],[14,15,"Task"],[18,19,"Task"]],"r":[[7,7,14,15,"appliedTo"],[7,7,18,19,"appliedTo"]]},
+    {"i":3,"t":["This","open","-","source","library","brings","state","-","of","-","the","-","art","models","for","Spanish","and","English","in","a","black","-","box","fashion",",","allowing","researchers","to","easily","access","these","techniques","."],"e":[[6,13,"MLModelGeneric"]],"r":[]},
+    {"i":4,"t":["Extracting","opinions","and","states","-","of","-","mind","from","user","-","generated","context","has","drawn","a","lot","of","attention","in","the","past","years",",","particularly","since","the","eclosion","of","Social","Networks","."],"e":[[9,12,"DatasetGeneric"]],"r":[]},
+    {"i":5,"t":["Applications","for","these","techniques","come","in","many","flavors",",","such","as","commercial","uses",",","political","campaigns",",","and","even","studying","the","changing","patterns","of","emotions","during","the","COVID-19","pandemics","[","8","]","."],"e":[[30,30,"ReferenceLink"]],"r":[]},
+    {"i":6,"t":["An","issue","that","inhibits","users","of","these","opinion","-","mining","technologies","is","that","there","is","not","a","big","spectrum","of","libraries","for","these","tasks",";","mainly",",","one","has","to","resort","paid","APIs","provided","by","companies",",","or","rely","on","models","that","are","very","out","-","of","-","the","-","date","or","even","unavailable","for","a","given","language","different","from","English","."],"e":[[7,9,"Task"],[40,40,"MLModelGeneric"]],"r":[]},
+    {"i":7,"t":["In","order","to","foster","research","using","sentiment","and","other","opinion","-","mining","analysis","as","black","-","box","tools",",","we","present","pysentimiento",",","a","multilingual","toolkit","for","these","tasks","."],"e":[[6,12,"Task"],[21,21,"Method"]],"r":[[21,21,6,12,"appliedTo"]]},
+    {"i":8,"t":["pysentimiento","provides","state","-","of","-","the","-","art","transformed","-","based","models","for","Sentiment","Analysis","and","Emotion","Analysis","in","an","out","-","of","-","the","-","box","fashion",",","with","current","support","of","Spanish","and","English","."],"e":[[0,0,"Method"],[2,12,"MLModelGeneric"],[14,15,"Task"],[17,18,"Task"]],"r":[[0,0,2,12,"usedFor"],[2,12,14,15,"appliedTo"],[2,12,17,18,"appliedTo"]]},
+    {"omit":true,"index":9},
+    {"i":10,"t":["We","now","describe","the","datasets","we","used",",","the","models","we","trained",",","the","results",",","and","the","selected","default","models","in","our","library","."],"e":[[3,4,"DatasetGeneric"],[8,9,"MLModelGeneric"],[17,20,"MLModelGeneric"]],"r":[]},
+    {"i":11,"t":["Appart","from","the","commercial","APIs",",","there","are","not","many","options","of","libraries","providing","out","-","of","-","the","-","box","models","for","Sentiment","Analysis","."],"e":[[14,21,"MLModelGeneric"],[23,24,"Task"]],"r":[[14,21,23,24,"appliedTo"]]},
+    {"i":12,"t":["VADER","[","7","]","is","a","lexicon","and","rule","-","based","library","for","Sentiment","Analysis","in","English",",","specially","crafted","for","Social","Media","."],"e":[[0,0,"Method"],[2,2,"ReferenceLink"],[13,14,"Task"]],"r":[[0,0,13,14,"appliedTo"]]},
+    {"i":13,"t":["It","provides","multilingual","support","through","translation","from","the","target","language","to","English","."],"e":[[7,9,"DatasetGeneric"]],"r":[]},
+    {"i":14,"t":["Textblob","is","a","library","providing","pretrained","models","for","many","NLP","tasks","using","classic","machine","learning","models","such","as","Naive","Bayes","."],"e":[[0,0,"Method"],[5,6,"MLModelGeneric"],[12,15,"MLModelGeneric"],[18,19,"MLModel"]],"r":[[0,0,5,6,"usedFor"],[18,19,12,15,"isHyponymOf"]]},
+    {"i":15,"t":["Support","is","primary","in","English",",","with","some","adapters","for","other","languages","."],"e":[[8,8,"MLModelGeneric"],[8,8,"ModelArchitecture"]],"r":[]},
+    {"i":16,"t":["Transformers","[","14","]","is","a","library","providing","pretrained","language","models","such","as","BERT","[","3","]","for","classification","and","language","-","generation","tasks","."],"e":[[0,0,"ModelArchitecture"],[2,2,"ReferenceLink"],[8,10,"MLModelGeneric"],[13,13,"MLModel"],[15,15,"ReferenceLink"],[18,18,"Task"],[20,22,"Task"]],"r":[[8,10,0,0,"architecture"],[0,0,2,2,"citation"],[13,13,8,10,"isHyponymOf"],[13,13,18,18,"appliedTo"],[13,13,20,22,"appliedTo"]]},
+    {"i":17,"t":["It","also","provides","pipelines","for","Sentiment","Analysis","and","other","NLP","tasks","but","-","as","far","as","we","knowonly","English","models","are","provided","."],"e":[[5,6,"Task"],[18,19,"MLModelGeneric"]],"r":[]},
+    {"i":18,"t":["We","tackled","two","tasks",":","Sentiment","Analysis","and","Emotion","Analysis",",","both","on","Twitter","datasets","."],"e":[[5,6,"Task"],[8,9,"Task"],[13,14,"DatasetGeneric"],[13,13,"DataSource"]],"r":[[13,14,5,6,"benchmarkFor"],[13,14,8,9,"benchmarkFor"],[13,14,13,13,"sourcedFrom"]]},
+    {"i":19,"t":["For","the","former",",","we","used","two","datasets",":","TASS","2020","Task","1","[","4","]","and","SemEval","2017","Task","4","Subtask","1","[","12","]","."],"e":[[6,7,"DatasetGeneric"],[9,12,"Dataset"],[14,14,"ReferenceLink"],[17,22,"Dataset"],[24,24,"ReferenceLink"]],"r":[[6,7,9,12,"coreference"],[6,7,17,22,"coreference"],[9,12,14,14,"citation"],[17,22,24,24,"citation"]]},
+    {"i":20,"t":["Both","datasets","were","labeled","with","general","polarity","using","positive",",","negative","and","neutral","outcomes","."],"e":[[0,1,"DatasetGeneric"]],"r":[]},
+    {"i":21,"t":["We","merged","together","the","Spanish","subsets","for","each","dialect",",","summing","up","to","6",",","000","tweets","(","CHECK","THIS","!",")","."],"e":[[3,5,"DatasetGeneric"],[13,16,"DatasetGeneric"]],"r":[[3,5,13,16,"size"]]},
+    {"i":22,"t":["The","English","dataset","has","around","50k","tweets","for","training","and","around","12k","for","testing","."],"e":[[0,2,"DatasetGeneric"],[5,6,"DatasetGeneric"],[11,11,"DatasetGeneric"]],"r":[[0,2,11,11,"size"],[0,2,5,6,"size"]]},
+    {"i":23,"t":["Regarding","Emotion","Analysis",",","we","used","EmoEvent","[","1","]",",","a","multilingual","emotion","dataset","labelled","with","the","six","Ekman","'s","basic","emotions","(","anger",",","disgust",",","fear",",","joy",",","sadness",",","surprise",")","and","also","a","\"","neutral","\"","emotion","."],"e":[[1,2,"Task"],[6,6,"Dataset"],[8,8,"ReferenceLink"],[11,14,"DatasetGeneric"],[19,22,"Method"]],"r":[[6,6,1,2,"benchmarkFor"],[6,6,8,8,"citation"],[6,6,11,14,"isHyponymOf"],[6,6,19,22,"generatedBy"]]},
+    {"omit":true,"index":24},
+    {"i":25,"t":["Transformer","-","based","models","have","become","state","-","of","-","the","-","art","in","NLP",",","both","for","classification","and","generation","tasks",",","displacing","models","based","on","recurrent","networks","."],"e":[[0,3,"MLModelGeneric"],[0,2,"ModelArchitecture"],[6,12,"MLModelGeneric"],[18,18,"Task"],[20,20,"Task"],[24,24,"MLModelGeneric"],[27,28,"ModelArchitecture"]],"r":[[0,3,6,12,"coreference"],[0,3,18,18,"appliedTo"],[0,3,20,20,"appliedTo"],[0,3,24,24,"isComparedTo"],[24,24,27,28,"architecture"]]},
+    {"i":26,"t":["BERT","[","3","]","and","GPT","[","11","]","are","flagships","of","these","models","."],"e":[[0,0,"ModelArchitecture"],[2,2,"ReferenceLink"],[5,5,"ModelArchitecture"],[7,7,"ReferenceLink"],[12,13,"MLModelGeneric"]],"r":[[0,0,2,2,"citation"],[5,5,7,7,"citation"]]},
+    {"i":27,"t":["We","performed","experiments","with","several","models","."],"e":[[4,5,"MLModelGeneric"]],"r":[]},
+    {"i":28,"t":["For","English",",","we","tested","BERT","base","[","3","]",",","RoBERTa","base","[","9","]",",","BERTweet","[","10","]","and","multilingual","models",",","namely","Dis","-","tilBERT","[","13","]","and","mBERT","[","3","]","."],"e":[[5,6,"MLModel"],[8,8,"ReferenceLink"],[11,12,"MLModel"],[14,14,"ReferenceLink"],[17,17,"MLModel"],[19,19,"ReferenceLink"],[22,23,"MLModelGeneric"],[26,28,"MLModel"],[30,30,"ReferenceLink"],[33,33,"MLModel"],[35,35,"ReferenceLink"]],"r":[[5,6,8,8,"citation"],[11,12,14,14,"citation"],[17,17,19,19,"citation"],[26,28,22,23,"isPartOf"],[33,33,22,23,"isPartOf"],[26,28,30,30,"citation"],[33,33,35,35,"citation"]]},
+    {"i":29,"t":["Spanish","has","lesser","availability","of","models",":","we","used","BETO","[","2","]",",","a","Spanish","-","trained","version","of","BERT",",","and","the","aforementioned","multilingual","models","."],"e":[[9,9,"MLModel"],[11,11,"ReferenceLink"],[14,20,"MLModelGeneric"],[20,20,"ModelArchitecture"],[23,26,"MLModelGeneric"]],"r":[[9,9,11,11,"citation"],[9,9,14,20,"isHyponymOf"]]},
+    {"i":30,"t":["Models","were","trained","in","a","fairly","standard","way",",","using","small","triangular","learning","rates","(","∼","10","−5",")","[","6","]","for","5","epochs","(","10","in","the","case","of","SemEval","dataset","as","it","is","big","enough",")","."],"e":[[0,0,"MLModelGeneric"],[10,13,"Method"],[20,20,"ReferenceLink"],[31,31,"Dataset"]],"r":[[10,13,0,0,"usedFor"],[10,13,20,20,"citation"],[0,0,31,31,"trainedOn"]]},
+    {"i":31,"t":["For","the","emotion","datasets","we","used","class","weights","in","the","cross","-","entropy","loss","as","it","is","somehow","imbalanced","."],"e":[[1,3,"DatasetGeneric"],[6,7,"Method"],[10,13,"Method"]],"r":[]},
+    {"i":32,"t":["Training","(","and","posterior","delivering",")","is","done","using","transformers","[","14","]","library","."],"e":[[9,9,"Method"],[11,11,"ReferenceLink"]],"r":[[9,9,11,11,"citation"]]},
+    {"omit":true,"index":33},
+    {"i":34,"t":["In","English",",","the","best","performing","model","is","BerTweet","but","just","with","a","slight","difference","with","RoBERTa","."],"e":[[3,6,"MLModelGeneric"],[8,8,"MLModel"],[16,16,"MLModel"]],"r":[[3,6,8,8,"coreference"]]},
+    {"i":35,"t":["Both","are","powerful","models","known","to","have","better","performance","than","BERT",";","particularly","BERTweet","is","very","suited","to","these","SocialNLP","tasks","as","it","is","entirely","trained","on","tweets","."],"e":[[2,3,"MLModelGeneric"],[10,10,"MLModel"],[13,13,"MLModel"],[19,19,"Task"],[27,27,"DatasetGeneric"]],"r":[[13,13,19,19,"appliedTo"],[13,13,27,27,"trainedOn"]]},
+    {"i":36,"t":["We","can","observe","that","in","Spanish","BETO","yields","the","best","results","for","a","large","margin","(","around","6","F1","points",")","against","mbert","and","distilbert",",","something","expected","as","it","is","well","known","that","monolingual","models","greatly","outperform","multilingual","ones","."],"e":[[6,6,"MLModel"],[22,22,"MLModel"],[24,24,"MLModel"],[34,35,"MLModelGeneric"],[38,38,"MLModelGeneric"]],"r":[[6,6,34,35,"coreference"],[22,22,38,38,"coreference"],[24,24,38,38,"coreference"]]},
+    {"i":37,"t":["Although","there","are","models","similar","to","BERTweet","in","Spanish","[","5","]","we","were","not","able","to","test","them","as","they","were","not","available","in","huggingface","'s","model","hub","."],"e":[[3,3,"MLModelGeneric"],[6,6,"MLModel"],[10,10,"ReferenceLink"],[25,28,"Method"]],"r":[[6,6,10,10,"citation"]]},
+    {"i":38,"t":["In","this","work","we","presented","pysentimiento",",","a","multilingual","toolkit","for","Sentiment","Analysis","and","Emotion","Analysis","."],"e":[[5,5,"Method"],[11,12,"Task"],[14,15,"Task"]],"r":[[5,5,11,12,"appliedTo"],[5,5,14,15,"appliedTo"]]},
+    {"i":39,"t":["We","provide","state","-","of","-","the","-","art","models","and","an","easyto","-","use","interface","in","Python",",","expecting","this","will","help","researchers","interested","in","opinion","mining","from","social","networks","."],"e":[[2,9,"MLModelGeneric"],[26,27,"Task"]],"r":[]},
+    {"omit":true,"index":40},
+    {"i":41,"t":["We","plan","to","expand","to","more","tasks",",","such","as","hate","speech","detection",",","irony","detection",",","and","others","."],"e":[[10,12,"Task"],[14,15,"Task"]],"r":[]},
+    {"i":42,"t":["Also",",","we","plan","to","provide","more","powerful","pretrained","models","for","other","languages","(","mainly","Spanish",")","to","enhance","performance","in","other","languages","than","English","."],"e":[[7,9,"MLModelGeneric"]],"r":[]},
+    {"i":43,"t":["4",":","Code","is","available","at","http",":/","/","github.com","/","pysentimiento","/","pysentimiento"],"e":[[6,13,"URL"]],"r":[]}
+  ];
+
+  const root = document.getElementById("gsap-ere-article-figure");
+  const paper = root.querySelector(".paper");
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const noSpaceBefore = new Set([",",".",";",":","!","?","%",")","]","}","'s"]);
+  const noSpaceAfter = new Set(["(","[","{"]);
+  const joinBoth = new Set(["-","/"]);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  function svgElement(name, attrs) {
+    const el = document.createElementNS(SVG_NS, name);
+    Object.entries(attrs || {}).forEach(function (entry) {
+      el.setAttribute(entry[0], String(entry[1]));
+    });
+    return el;
+  }
+
+  function entityClass(types) {
+    const joined = types.join(" ");
+    if (/Dataset|DataSource/.test(joined)) return "entity-dataset";
+    if (/Task/.test(joined)) return "entity-task";
+    if (/Method/.test(joined)) return "entity-method";
+    if (/MLModel|ModelArchitecture/.test(joined)) return "entity-model";
+    if (/ReferenceLink/.test(joined)) return "entity-reference";
+    return "entity-url";
+  }
+
+  function mentionText(item, start, end) {
+    return item.t.slice(start, end + 1).join(" ");
+  }
+
+  function typesAt(item, index) {
+    return item.e.filter(function (e) {
+      return index >= e[0] && index <= e[1];
+    }).map(function (e) {
+      return e[2];
+    });
+  }
+
+  function needsSpace(previous, current) {
+    if (!previous) return false;
+    if (noSpaceBefore.has(current) || noSpaceAfter.has(previous)) return false;
+    if (joinBoth.has(current) || joinBoth.has(previous)) return false;
+    if (current === "\"" || previous === "\"") return false;
+    if (current === ":/" || previous === ":/") return false;
+    return true;
+  }
+
+  function uniqueMentions(item) {
+    const grouped = new Map();
+    item.e.forEach(function (e) {
+      const key = e[0] + ":" + e[1];
+      if (!grouped.has(key)) grouped.set(key, {start:e[0], end:e[1], types:[]});
+      grouped.get(key).types.push(e[2]);
+    });
+    return Array.from(grouped.values());
+  }
+
+  function makeOmission() {
+    const node = document.createElement("div");
+    node.className = "ellipsis";
+    node.setAttribute("aria-label", "Annotation-free article segment omitted");
+    node.textContent = "[…]";
+    return node;
+  }
+
+  function makeSentence(item) {
+    const section = document.createElement("section");
+    section.className = "sentence";
+    section.dataset.segment = item.i;
+    const svg = svgElement("svg", {
+      role: "img",
+      "aria-label": "Article segment " + item.i + " with " + item.e.length +
+        " entity annotations and " + item.r.length + " directed relations"
+    });
+    const title = svgElement("title");
+    title.textContent = item.t.join(" ");
+    svg.appendChild(title);
+    section.appendChild(svg);
+    section._item = item;
+    section._svg = svg;
+    return section;
+  }
+
+  DATA.forEach(function (item) {
+    paper.appendChild(item.omit ? makeOmission() : makeSentence(item));
+  });
+
+  function drawSentence(section) {
+    const item = section._item;
+    const svg = section._svg;
+    while (svg.childNodes.length > 1) svg.removeChild(svg.lastChild);
+
+    const width = Math.max(300, Math.floor(section.clientWidth));
+    const margin = 8;
+    const fontFamily = getComputedStyle(root).fontFamily;
+    context.font = "400 14px " + fontFamily;
+    const spaceWidth = context.measureText(" ").width;
+    const entityTokens = item.t.map(function (_, index) {
+      return typesAt(item, index).length > 0;
+    });
+    const maxRelationLift = 25 + Math.min(6, Math.max(0, item.r.length - 1)) * 8;
+    const firstBaseline = item.r.length ? maxRelationLift + 18 : 20;
+    const lineBand = item.r.length ? firstBaseline + 18 : 30;
+    const tokenPositions = [];
+    let x = margin;
+    let line = 0;
+    let previous = "";
+
+    item.t.forEach(function (token, index) {
+      let gap = needsSpace(previous, token) ? spaceWidth : 0;
+      if (index > 0 && entityTokens[index] !== entityTokens[index - 1]) {
+        gap += spaceWidth;
+      }
+      const tokenWidth = Math.max(1, context.measureText(token).width);
+      if (x + gap + tokenWidth > width - margin && x > margin) {
+        line += 1;
+        x = margin;
+      } else {
+        x += gap;
+      }
+      tokenPositions[index] = {
+        x: x,
+        y: firstBaseline + line * lineBand,
+        width: tokenWidth,
+        line: line
+      };
+      x += tokenWidth;
+      previous = token;
+    });
+
+    const totalLines = line + 1;
+    const height = firstBaseline + (totalLines - 1) * lineBand +
+      (item.r.length ? 22 : 12);
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.setAttribute("height", height);
+
+    const defs = svgElement("defs");
+    const markerId = "arrow-" + item.i;
+    const marker = svgElement("marker", {
+      id: markerId,
+      viewBox: "0 0 10 10",
+      refX: 8,
+      refY: 5,
+      markerWidth: 6,
+      markerHeight: 6,
+      orient: "auto-start-reverse"
+    });
+    marker.appendChild(svgElement("path", {
+      d: "M 0 0 L 10 5 L 0 10 z",
+      class: "relation-arrowhead"
+    }));
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    const highlightLayer = svgElement("g", {"aria-hidden":"true"});
+    const relationLayer = svgElement("g", {"aria-hidden":"true"});
+    const textLayer = svgElement("g");
+    svg.appendChild(highlightLayer);
+    svg.appendChild(relationLayer);
+    svg.appendChild(textLayer);
+
+    const spanBoxes = new Map();
+    uniqueMentions(item).forEach(function (mention) {
+      const perLine = new Map();
+      for (let index = mention.start; index <= mention.end; index += 1) {
+        const position = tokenPositions[index];
+        if (!perLine.has(position.line)) {
+          perLine.set(position.line, {
+            x1: position.x,
+            x2: position.x + position.width,
+            y: position.y,
+            line: position.line
+          });
+        } else {
+          perLine.get(position.line).x2 = position.x + position.width;
+        }
+      }
+      const boxes = Array.from(perLine.values());
+      spanBoxes.set(mention.start + ":" + mention.end, boxes);
+      boxes.forEach(function (box) {
+        const rect = svgElement("rect", {
+          x: box.x1 - 2,
+          y: box.y - 16,
+          width: box.x2 - box.x1 + 4,
+          height: 20,
+          rx: 2,
+          class: "entity-box " + entityClass(mention.types),
+          "data-tooltip": mention.types.join(" + ") + ": " +
+            mentionText(item, mention.start, mention.end)
+        });
+        const rectTitle = svgElement("title");
+        rectTitle.textContent = mention.types.join(" + ") + ": " +
+          mentionText(item, mention.start, mention.end);
+        rect.appendChild(rectTitle);
+        highlightLayer.appendChild(rect);
+      });
+    });
+
+    item.t.forEach(function (token, index) {
+      const position = tokenPositions[index];
+      const types = typesAt(item, index);
+      const text = svgElement("text", {
+        x: position.x,
+        y: position.y,
+        class: "body-token" + (types.length ? " entity-token" : "")
+      });
+      text.textContent = token;
+      textLayer.appendChild(text);
+    });
+
+    function anchor(start, end, towardLine) {
+      const boxes = spanBoxes.get(start + ":" + end);
+      let box = boxes[0];
+      if (boxes.length > 1 && towardLine !== undefined) {
+        box = boxes.reduce(function (best, candidate) {
+          return Math.abs(candidate.line - towardLine) <
+            Math.abs(best.line - towardLine) ? candidate : best;
+        }, boxes[0]);
+      }
+      return {
+        x: (box.x1 + box.x2) / 2,
+        y: box.y - 15,
+        line: box.line
+      };
+    }
+
+    item.r.forEach(function (relation, relationIndex) {
+      const sourceFirst = spanBoxes.get(relation[0] + ":" + relation[1])[0];
+      const targetFirst = spanBoxes.get(relation[2] + ":" + relation[3])[0];
+      const source = anchor(relation[0], relation[1], targetFirst.line);
+      const target = anchor(relation[2], relation[3], sourceFirst.line);
+      const lane = relationIndex % 7;
+      let d;
+      let labelX;
+      let labelY;
+
+      if (Math.abs(source.x - target.x) < 4 && source.line === target.line) {
+        const loopHeight = 28 + lane * 7;
+        const loopWidth = 18 + lane * 4;
+        d = "M " + (source.x - 2) + " " + source.y +
+          " C " + (source.x - loopWidth) + " " + (source.y - loopHeight) +
+          ", " + (source.x + loopWidth) + " " + (target.y - loopHeight) +
+          ", " + (target.x + 2) + " " + target.y;
+        labelX = source.x;
+        labelY = source.y - loopHeight - 2;
+      } else if (source.line === target.line) {
+        const lift = 25 + lane * 8;
+        const middle = (source.x + target.x) / 2;
+        d = "M " + source.x + " " + source.y +
+          " C " + source.x + " " + (source.y - lift) +
+          ", " + target.x + " " + (target.y - lift) +
+          ", " + target.x + " " + target.y;
+        labelX = middle;
+        labelY = source.y - lift + 2;
+      } else {
+        const bend = 24 + lane * 5;
+        d = "M " + source.x + " " + source.y +
+          " C " + source.x + " " + (source.y - bend) +
+          ", " + target.x + " " + (target.y - bend) +
+          ", " + target.x + " " + target.y;
+        labelX = (source.x + target.x) / 2;
+        labelY = (source.y + target.y) / 2 - bend / 2;
+      }
+
+      const path = svgElement("path", {
+        d: d,
+        class: "relation-path",
+        "marker-end": "url(#" + markerId + ")"
+      });
+      const pathTitle = svgElement("title");
+      pathTitle.textContent = relation[4] + ": " +
+        mentionText(item, relation[0], relation[1]) + " → " +
+        mentionText(item, relation[2], relation[3]);
+      path.appendChild(pathTitle);
+      relationLayer.appendChild(path);
+
+      context.font = "400 12px " + fontFamily;
+      const labelWidth = context.measureText(relation[4]).width + 8;
+      relationLayer.appendChild(svgElement("rect", {
+        x: labelX - labelWidth / 2,
+        y: labelY - 11,
+        width: labelWidth,
+        height: 15,
+        rx: 2,
+        class: "relation-label-bg"
+      }));
+      const label = svgElement("text", {
+        x: labelX,
+        y: labelY,
+        "text-anchor": "middle",
+        class: "relation-label"
+      });
+      label.textContent = relation[4];
+      relationLayer.appendChild(label);
+    });
+  }
+
+  function drawAll() {
+    root.querySelectorAll(".sentence").forEach(drawSentence);
+  }
+
+  drawAll();
+  const resizeObserver = new ResizeObserver(drawAll);
+  resizeObserver.observe(root);
+})();
+</script>
