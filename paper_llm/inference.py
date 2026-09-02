@@ -755,9 +755,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-    if (args.ner_shots, args.re_shots) not in {(10, 1), (10, 5), (0, 0)}:
+    if (args.ner_shots, args.re_shots) not in {(10, 1), (10, 5), (10, 10), (0, 0)}:
         parser.error(
-            "supported ICL configurations are --ner-shots 10 with --re-shots 1 or 5, "
+            "supported ICL configurations are --ner-shots 10 with --re-shots 1, 5, or 10, "
             "or both zero"
         )
     if args.resume and args.overwrite:

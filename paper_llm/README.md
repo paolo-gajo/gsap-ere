@@ -98,17 +98,19 @@ These runs do not load the retriever or read the training demonstration pool.
 Their NER and RE prompt example sections are empty. Results are written to
 separate `*-zero-icl-*` directories.
 
-## Five-shot RE ablation
+## RE-shot ablations
 
 Keep the paper-selected 10-shot NER stage and increase only the RE stage to
-five examples:
+five or ten examples:
 
 ```bash
 RE_SHOTS=5 THINK=0 bash paper_llm/run_john_qwen.sh
 RE_SHOTS=5 THINK=1 bash paper_llm/run_john_qwen.sh
+RE_SHOTS=10 THINK=0 bash paper_llm/run_john_qwen.sh
+RE_SHOTS=10 THINK=1 bash paper_llm/run_john_qwen.sh
 ```
 
-The five RE examples are selected with the reconstructed `similar+diverse`
+The RE examples are selected with the reconstructed `similar+diverse`
 rule: prefer the matching ordered entity-type signature, then greedily
 maximize distinct relation labels with sentence cosine as the tie-break.
-Results are written to separate `*-re-5shot-*` directories.
+Results are written to separate `*-re-5shot-*` or `*-re-10shot-*` directories.

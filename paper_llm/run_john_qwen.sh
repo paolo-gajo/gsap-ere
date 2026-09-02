@@ -21,8 +21,8 @@ if [[ "${full_article_context}" != "0" && "${full_article_context}" != "1" ]]; t
   exit 1
 fi
 re_shots="${RE_SHOTS:-1}"
-if [[ "${re_shots}" != "1" && "${re_shots}" != "5" ]]; then
-  echo "error: RE_SHOTS must be 1 or 5" >&2
+if [[ "${re_shots}" != "1" && "${re_shots}" != "5" && "${re_shots}" != "10" ]]; then
+  echo "error: RE_SHOTS must be 1, 5, or 10" >&2
   exit 1
 fi
 if [[ "${think}" == "1" ]]; then
@@ -39,9 +39,9 @@ fi
 if [[ "${zero_icl}" == "1" ]]; then
   icl_suffix="-zero-icl"
   icl_args=(--ner-shots 0 --re-shots 0)
-elif [[ "${re_shots}" == "5" ]]; then
-  icl_suffix="-re-5shot"
-  icl_args=(--ner-shots 10 --re-shots 5)
+elif [[ "${re_shots}" != "1" ]]; then
+  icl_suffix="-re-${re_shots}shot"
+  icl_args=(--ner-shots 10 --re-shots "${re_shots}")
 else
   icl_suffix=""
   icl_args=()
