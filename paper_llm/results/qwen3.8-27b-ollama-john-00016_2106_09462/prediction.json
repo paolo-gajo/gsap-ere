@@ -1,0 +1,1946 @@
+{
+  "document_id": "00016_2106_09462.txt",
+  "entities": [
+    {
+      "id": "s0e0",
+      "segment_id": 0,
+      "start": 0,
+      "end": 2,
+      "type": "Task",
+      "text": "Extracting opinions from"
+    },
+    {
+      "id": "s0e1",
+      "segment_id": 0,
+      "start": 3,
+      "end": 3,
+      "type": "DatasetGeneric",
+      "text": "texts"
+    },
+    {
+      "id": "s0e2",
+      "segment_id": 0,
+      "start": 23,
+      "end": 24,
+      "type": "DatasetGeneric",
+      "text": "usergenerated content"
+    },
+    {
+      "id": "s0e3",
+      "segment_id": 0,
+      "start": 26,
+      "end": 27,
+      "type": "DataSource",
+      "text": "social networks"
+    },
+    {
+      "id": "s1e0",
+      "segment_id": 1,
+      "start": 8,
+      "end": 9,
+      "type": "Task",
+      "text": "opinion mining"
+    },
+    {
+      "id": "s2e0",
+      "segment_id": 2,
+      "start": 7,
+      "end": 7,
+      "type": "MLModel",
+      "text": "pysentimiento"
+    },
+    {
+      "id": "s2e1",
+      "segment_id": 2,
+      "start": 14,
+      "end": 15,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s2e2",
+      "segment_id": 2,
+      "start": 18,
+      "end": 20,
+      "type": "Task",
+      "text": "Social NLP tasks"
+    },
+    {
+      "id": "s3e0",
+      "segment_id": 3,
+      "start": 0,
+      "end": 13,
+      "type": "MLModelGeneric",
+      "text": "This open - source library brings state - of - the - art models"
+    },
+    {
+      "id": "s3e1",
+      "segment_id": 3,
+      "start": 15,
+      "end": 15,
+      "type": "DatasetGeneric",
+      "text": "Spanish"
+    },
+    {
+      "id": "s3e2",
+      "segment_id": 3,
+      "start": 17,
+      "end": 17,
+      "type": "DatasetGeneric",
+      "text": "English"
+    },
+    {
+      "id": "s3e3",
+      "segment_id": 3,
+      "start": 30,
+      "end": 31,
+      "type": "Method",
+      "text": "these techniques"
+    },
+    {
+      "id": "s4e0",
+      "segment_id": 4,
+      "start": 0,
+      "end": 7,
+      "type": "Task",
+      "text": "Extracting opinions and states - of - mind"
+    },
+    {
+      "id": "s4e1",
+      "segment_id": 4,
+      "start": 9,
+      "end": 12,
+      "type": "DatasetGeneric",
+      "text": "user - generated context"
+    },
+    {
+      "id": "s4e2",
+      "segment_id": 4,
+      "start": 29,
+      "end": 30,
+      "type": "DataSource",
+      "text": "Social Networks"
+    },
+    {
+      "id": "s5e0",
+      "segment_id": 5,
+      "start": 30,
+      "end": 30,
+      "type": "ReferenceLink",
+      "text": "8"
+    },
+    {
+      "id": "s6e0",
+      "segment_id": 6,
+      "start": 7,
+      "end": 10,
+      "type": "Task",
+      "text": "opinion - mining technologies"
+    },
+    {
+      "id": "s6e1",
+      "segment_id": 6,
+      "start": 23,
+      "end": 23,
+      "type": "Task",
+      "text": "tasks"
+    },
+    {
+      "id": "s6e2",
+      "segment_id": 6,
+      "start": 40,
+      "end": 40,
+      "type": "MLModelGeneric",
+      "text": "models"
+    },
+    {
+      "id": "s7e0",
+      "segment_id": 7,
+      "start": 6,
+      "end": 12,
+      "type": "Task",
+      "text": "sentiment and other opinion - mining analysis"
+    },
+    {
+      "id": "s7e1",
+      "segment_id": 7,
+      "start": 21,
+      "end": 21,
+      "type": "MLModel",
+      "text": "pysentimiento"
+    },
+    {
+      "id": "s8e0",
+      "segment_id": 8,
+      "start": 0,
+      "end": 0,
+      "type": "MLModel",
+      "text": "pysentimiento"
+    },
+    {
+      "id": "s8e1",
+      "segment_id": 8,
+      "start": 9,
+      "end": 12,
+      "type": "MLModelGeneric",
+      "text": "transformed - based models"
+    },
+    {
+      "id": "s8e2",
+      "segment_id": 8,
+      "start": 14,
+      "end": 15,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s8e3",
+      "segment_id": 8,
+      "start": 17,
+      "end": 18,
+      "type": "Task",
+      "text": "Emotion Analysis"
+    },
+    {
+      "id": "s10e0",
+      "segment_id": 10,
+      "start": 3,
+      "end": 4,
+      "type": "DatasetGeneric",
+      "text": "the datasets"
+    },
+    {
+      "id": "s10e1",
+      "segment_id": 10,
+      "start": 8,
+      "end": 9,
+      "type": "MLModelGeneric",
+      "text": "the models"
+    },
+    {
+      "id": "s10e2",
+      "segment_id": 10,
+      "start": 17,
+      "end": 20,
+      "type": "MLModelGeneric",
+      "text": "the selected default models"
+    },
+    {
+      "id": "s11e0",
+      "segment_id": 11,
+      "start": 3,
+      "end": 4,
+      "type": "MLModelGeneric",
+      "text": "commercial APIs"
+    },
+    {
+      "id": "s11e1",
+      "segment_id": 11,
+      "start": 14,
+      "end": 21,
+      "type": "MLModelGeneric",
+      "text": "out - of - the - box models"
+    },
+    {
+      "id": "s11e2",
+      "segment_id": 11,
+      "start": 23,
+      "end": 24,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s12e0",
+      "segment_id": 12,
+      "start": 0,
+      "end": 0,
+      "type": "MLModel",
+      "text": "VADER"
+    },
+    {
+      "id": "s12e1",
+      "segment_id": 12,
+      "start": 2,
+      "end": 2,
+      "type": "ReferenceLink",
+      "text": "7"
+    },
+    {
+      "id": "s12e2",
+      "segment_id": 12,
+      "start": 6,
+      "end": 11,
+      "type": "Method",
+      "text": "lexicon and rule - based library"
+    },
+    {
+      "id": "s12e3",
+      "segment_id": 12,
+      "start": 13,
+      "end": 14,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s12e4",
+      "segment_id": 12,
+      "start": 21,
+      "end": 22,
+      "type": "DataSource",
+      "text": "Social Media"
+    },
+    {
+      "id": "s13e0",
+      "segment_id": 13,
+      "start": 5,
+      "end": 5,
+      "type": "Task",
+      "text": "translation"
+    },
+    {
+      "id": "s13e1",
+      "segment_id": 13,
+      "start": 8,
+      "end": 9,
+      "type": "DatasetGeneric",
+      "text": "target language"
+    },
+    {
+      "id": "s13e2",
+      "segment_id": 13,
+      "start": 11,
+      "end": 11,
+      "type": "DatasetGeneric",
+      "text": "English"
+    },
+    {
+      "id": "s14e0",
+      "segment_id": 14,
+      "start": 0,
+      "end": 0,
+      "type": "Method",
+      "text": "Textblob"
+    },
+    {
+      "id": "s14e1",
+      "segment_id": 14,
+      "start": 5,
+      "end": 6,
+      "type": "MLModelGeneric",
+      "text": "pretrained models"
+    },
+    {
+      "id": "s14e2",
+      "segment_id": 14,
+      "start": 9,
+      "end": 10,
+      "type": "Task",
+      "text": "NLP tasks"
+    },
+    {
+      "id": "s14e3",
+      "segment_id": 14,
+      "start": 12,
+      "end": 15,
+      "type": "MLModelGeneric",
+      "text": "classic machine learning models"
+    },
+    {
+      "id": "s14e4",
+      "segment_id": 14,
+      "start": 18,
+      "end": 19,
+      "type": "ModelArchitecture",
+      "text": "Naive Bayes"
+    },
+    {
+      "id": "s16e0",
+      "segment_id": 16,
+      "start": 0,
+      "end": 0,
+      "type": "Method",
+      "text": "Transformers"
+    },
+    {
+      "id": "s16e1",
+      "segment_id": 16,
+      "start": 2,
+      "end": 2,
+      "type": "ReferenceLink",
+      "text": "14"
+    },
+    {
+      "id": "s16e2",
+      "segment_id": 16,
+      "start": 8,
+      "end": 10,
+      "type": "MLModelGeneric",
+      "text": "pretrained language models"
+    },
+    {
+      "id": "s16e3",
+      "segment_id": 16,
+      "start": 13,
+      "end": 13,
+      "type": "MLModel",
+      "text": "BERT"
+    },
+    {
+      "id": "s16e4",
+      "segment_id": 16,
+      "start": 15,
+      "end": 15,
+      "type": "ReferenceLink",
+      "text": "3"
+    },
+    {
+      "id": "s16e5",
+      "segment_id": 16,
+      "start": 18,
+      "end": 18,
+      "type": "Task",
+      "text": "classification"
+    },
+    {
+      "id": "s16e6",
+      "segment_id": 16,
+      "start": 20,
+      "end": 23,
+      "type": "Task",
+      "text": "language - generation tasks"
+    },
+    {
+      "id": "s17e0",
+      "segment_id": 17,
+      "start": 5,
+      "end": 6,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s17e1",
+      "segment_id": 17,
+      "start": 9,
+      "end": 10,
+      "type": "Task",
+      "text": "NLP tasks"
+    },
+    {
+      "id": "s17e2",
+      "segment_id": 17,
+      "start": 18,
+      "end": 19,
+      "type": "MLModelGeneric",
+      "text": "English models"
+    },
+    {
+      "id": "s18e0",
+      "segment_id": 18,
+      "start": 5,
+      "end": 6,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s18e1",
+      "segment_id": 18,
+      "start": 8,
+      "end": 9,
+      "type": "Task",
+      "text": "Emotion Analysis"
+    },
+    {
+      "id": "s18e2",
+      "segment_id": 18,
+      "start": 13,
+      "end": 13,
+      "type": "DataSource",
+      "text": "Twitter"
+    },
+    {
+      "id": "s18e3",
+      "segment_id": 18,
+      "start": 13,
+      "end": 14,
+      "type": "DatasetGeneric",
+      "text": "Twitter datasets"
+    },
+    {
+      "id": "s19e0",
+      "segment_id": 19,
+      "start": 6,
+      "end": 7,
+      "type": "DatasetGeneric",
+      "text": "two datasets"
+    },
+    {
+      "id": "s19e1",
+      "segment_id": 19,
+      "start": 9,
+      "end": 10,
+      "type": "Dataset",
+      "text": "TASS 2020"
+    },
+    {
+      "id": "s19e2",
+      "segment_id": 19,
+      "start": 9,
+      "end": 12,
+      "type": "DatasetGeneric",
+      "text": "TASS 2020 Task 1"
+    },
+    {
+      "id": "s19e3",
+      "segment_id": 19,
+      "start": 11,
+      "end": 12,
+      "type": "Task",
+      "text": "Task 1"
+    },
+    {
+      "id": "s19e4",
+      "segment_id": 19,
+      "start": 14,
+      "end": 14,
+      "type": "ReferenceLink",
+      "text": "4"
+    },
+    {
+      "id": "s19e5",
+      "segment_id": 19,
+      "start": 17,
+      "end": 18,
+      "type": "Dataset",
+      "text": "SemEval 2017"
+    },
+    {
+      "id": "s19e6",
+      "segment_id": 19,
+      "start": 17,
+      "end": 22,
+      "type": "DatasetGeneric",
+      "text": "SemEval 2017 Task 4 Subtask 1"
+    },
+    {
+      "id": "s19e7",
+      "segment_id": 19,
+      "start": 19,
+      "end": 22,
+      "type": "Task",
+      "text": "Task 4 Subtask 1"
+    },
+    {
+      "id": "s19e8",
+      "segment_id": 19,
+      "start": 24,
+      "end": 24,
+      "type": "ReferenceLink",
+      "text": "12"
+    },
+    {
+      "id": "s20e0",
+      "segment_id": 20,
+      "start": 0,
+      "end": 1,
+      "type": "DatasetGeneric",
+      "text": "Both datasets"
+    },
+    {
+      "id": "s21e0",
+      "segment_id": 21,
+      "start": 4,
+      "end": 5,
+      "type": "DatasetGeneric",
+      "text": "Spanish subsets"
+    },
+    {
+      "id": "s21e1",
+      "segment_id": 21,
+      "start": 13,
+      "end": 16,
+      "type": "DatasetGeneric",
+      "text": "6 , 000 tweets"
+    },
+    {
+      "id": "s22e0",
+      "segment_id": 22,
+      "start": 0,
+      "end": 2,
+      "type": "DatasetGeneric",
+      "text": "The English dataset"
+    },
+    {
+      "id": "s22e1",
+      "segment_id": 22,
+      "start": 5,
+      "end": 6,
+      "type": "DatasetGeneric",
+      "text": "50k tweets"
+    },
+    {
+      "id": "s22e2",
+      "segment_id": 22,
+      "start": 11,
+      "end": 13,
+      "type": "DatasetGeneric",
+      "text": "12k for testing"
+    },
+    {
+      "id": "s23e0",
+      "segment_id": 23,
+      "start": 1,
+      "end": 2,
+      "type": "Task",
+      "text": "Emotion Analysis"
+    },
+    {
+      "id": "s23e1",
+      "segment_id": 23,
+      "start": 6,
+      "end": 6,
+      "type": "Dataset",
+      "text": "EmoEvent"
+    },
+    {
+      "id": "s23e2",
+      "segment_id": 23,
+      "start": 8,
+      "end": 9,
+      "type": "ReferenceLink",
+      "text": "1 ]"
+    },
+    {
+      "id": "s23e3",
+      "segment_id": 23,
+      "start": 11,
+      "end": 14,
+      "type": "DatasetGeneric",
+      "text": "a multilingual emotion dataset"
+    },
+    {
+      "id": "s23e4",
+      "segment_id": 23,
+      "start": 18,
+      "end": 22,
+      "type": "Method",
+      "text": "six Ekman 's basic emotions"
+    },
+    {
+      "id": "s24e0",
+      "segment_id": 24,
+      "start": 12,
+      "end": 12,
+      "type": "DatasetGeneric",
+      "text": "train"
+    },
+    {
+      "id": "s24e1",
+      "segment_id": 24,
+      "start": 14,
+      "end": 14,
+      "type": "DatasetGeneric",
+      "text": "test"
+    },
+    {
+      "id": "s25e0",
+      "segment_id": 25,
+      "start": 0,
+      "end": 2,
+      "type": "ModelArchitecture",
+      "text": "Transformer - based"
+    },
+    {
+      "id": "s25e1",
+      "segment_id": 25,
+      "start": 0,
+      "end": 3,
+      "type": "MLModelGeneric",
+      "text": "Transformer - based models"
+    },
+    {
+      "id": "s25e2",
+      "segment_id": 25,
+      "start": 14,
+      "end": 14,
+      "type": "Method",
+      "text": "NLP"
+    },
+    {
+      "id": "s25e3",
+      "segment_id": 25,
+      "start": 18,
+      "end": 21,
+      "type": "Task",
+      "text": "classification and generation tasks"
+    },
+    {
+      "id": "s25e4",
+      "segment_id": 25,
+      "start": 24,
+      "end": 28,
+      "type": "MLModelGeneric",
+      "text": "models based on recurrent networks"
+    },
+    {
+      "id": "s25e5",
+      "segment_id": 25,
+      "start": 27,
+      "end": 28,
+      "type": "ModelArchitecture",
+      "text": "recurrent networks"
+    },
+    {
+      "id": "s26e0",
+      "segment_id": 26,
+      "start": 0,
+      "end": 0,
+      "type": "MLModel",
+      "text": "BERT"
+    },
+    {
+      "id": "s26e1",
+      "segment_id": 26,
+      "start": 2,
+      "end": 2,
+      "type": "ReferenceLink",
+      "text": "3"
+    },
+    {
+      "id": "s26e2",
+      "segment_id": 26,
+      "start": 5,
+      "end": 5,
+      "type": "MLModel",
+      "text": "GPT"
+    },
+    {
+      "id": "s26e3",
+      "segment_id": 26,
+      "start": 7,
+      "end": 7,
+      "type": "ReferenceLink",
+      "text": "11"
+    },
+    {
+      "id": "s26e4",
+      "segment_id": 26,
+      "start": 12,
+      "end": 13,
+      "type": "MLModelGeneric",
+      "text": "these models"
+    },
+    {
+      "id": "s27e0",
+      "segment_id": 27,
+      "start": 5,
+      "end": 5,
+      "type": "MLModelGeneric",
+      "text": "models"
+    },
+    {
+      "id": "s28e0",
+      "segment_id": 28,
+      "start": 5,
+      "end": 6,
+      "type": "MLModel",
+      "text": "BERT base"
+    },
+    {
+      "id": "s28e1",
+      "segment_id": 28,
+      "start": 8,
+      "end": 8,
+      "type": "ReferenceLink",
+      "text": "3"
+    },
+    {
+      "id": "s28e2",
+      "segment_id": 28,
+      "start": 11,
+      "end": 12,
+      "type": "MLModel",
+      "text": "RoBERTa base"
+    },
+    {
+      "id": "s28e3",
+      "segment_id": 28,
+      "start": 14,
+      "end": 14,
+      "type": "ReferenceLink",
+      "text": "9"
+    },
+    {
+      "id": "s28e4",
+      "segment_id": 28,
+      "start": 17,
+      "end": 17,
+      "type": "MLModel",
+      "text": "BERTweet"
+    },
+    {
+      "id": "s28e5",
+      "segment_id": 28,
+      "start": 19,
+      "end": 19,
+      "type": "ReferenceLink",
+      "text": "10"
+    },
+    {
+      "id": "s28e6",
+      "segment_id": 28,
+      "start": 22,
+      "end": 23,
+      "type": "MLModelGeneric",
+      "text": "multilingual models"
+    },
+    {
+      "id": "s28e7",
+      "segment_id": 28,
+      "start": 26,
+      "end": 28,
+      "type": "MLModel",
+      "text": "Dis - tilBERT"
+    },
+    {
+      "id": "s28e8",
+      "segment_id": 28,
+      "start": 30,
+      "end": 30,
+      "type": "ReferenceLink",
+      "text": "13"
+    },
+    {
+      "id": "s28e9",
+      "segment_id": 28,
+      "start": 33,
+      "end": 33,
+      "type": "MLModel",
+      "text": "mBERT"
+    },
+    {
+      "id": "s28e10",
+      "segment_id": 28,
+      "start": 35,
+      "end": 35,
+      "type": "ReferenceLink",
+      "text": "3"
+    },
+    {
+      "id": "s29e0",
+      "segment_id": 29,
+      "start": 5,
+      "end": 5,
+      "type": "MLModelGeneric",
+      "text": "models"
+    },
+    {
+      "id": "s29e1",
+      "segment_id": 29,
+      "start": 9,
+      "end": 9,
+      "type": "MLModel",
+      "text": "BETO"
+    },
+    {
+      "id": "s29e2",
+      "segment_id": 29,
+      "start": 11,
+      "end": 11,
+      "type": "ReferenceLink",
+      "text": "2"
+    },
+    {
+      "id": "s29e3",
+      "segment_id": 29,
+      "start": 14,
+      "end": 20,
+      "type": "MLModelGeneric",
+      "text": "a Spanish - trained version of BERT"
+    },
+    {
+      "id": "s29e4",
+      "segment_id": 29,
+      "start": 20,
+      "end": 20,
+      "type": "ModelArchitecture",
+      "text": "BERT"
+    },
+    {
+      "id": "s29e5",
+      "segment_id": 29,
+      "start": 23,
+      "end": 26,
+      "type": "MLModelGeneric",
+      "text": "the aforementioned multilingual models"
+    },
+    {
+      "id": "s30e0",
+      "segment_id": 30,
+      "start": 0,
+      "end": 0,
+      "type": "MLModelGeneric",
+      "text": "Models"
+    },
+    {
+      "id": "s30e1",
+      "segment_id": 30,
+      "start": 11,
+      "end": 13,
+      "type": "Method",
+      "text": "triangular learning rates"
+    },
+    {
+      "id": "s30e2",
+      "segment_id": 30,
+      "start": 20,
+      "end": 20,
+      "type": "ReferenceLink",
+      "text": "6"
+    },
+    {
+      "id": "s30e3",
+      "segment_id": 30,
+      "start": 31,
+      "end": 32,
+      "type": "Dataset",
+      "text": "SemEval dataset"
+    },
+    {
+      "id": "s31e0",
+      "segment_id": 31,
+      "start": 2,
+      "end": 3,
+      "type": "DatasetGeneric",
+      "text": "emotion datasets"
+    },
+    {
+      "id": "s31e1",
+      "segment_id": 31,
+      "start": 6,
+      "end": 7,
+      "type": "Method",
+      "text": "class weights"
+    },
+    {
+      "id": "s31e2",
+      "segment_id": 31,
+      "start": 10,
+      "end": 13,
+      "type": "Method",
+      "text": "cross - entropy loss"
+    },
+    {
+      "id": "s32e0",
+      "segment_id": 32,
+      "start": 0,
+      "end": 0,
+      "type": "Method",
+      "text": "Training"
+    },
+    {
+      "id": "s32e1",
+      "segment_id": 32,
+      "start": 9,
+      "end": 9,
+      "type": "ModelArchitecture",
+      "text": "transformers"
+    },
+    {
+      "id": "s32e2",
+      "segment_id": 32,
+      "start": 11,
+      "end": 11,
+      "type": "ReferenceLink",
+      "text": "14"
+    },
+    {
+      "id": "s34e0",
+      "segment_id": 34,
+      "start": 3,
+      "end": 6,
+      "type": "MLModelGeneric",
+      "text": "the best performing model"
+    },
+    {
+      "id": "s34e1",
+      "segment_id": 34,
+      "start": 8,
+      "end": 8,
+      "type": "MLModel",
+      "text": "BerTweet"
+    },
+    {
+      "id": "s34e2",
+      "segment_id": 34,
+      "start": 16,
+      "end": 16,
+      "type": "MLModel",
+      "text": "RoBERTa"
+    },
+    {
+      "id": "s35e0",
+      "segment_id": 35,
+      "start": 2,
+      "end": 3,
+      "type": "MLModelGeneric",
+      "text": "powerful models"
+    },
+    {
+      "id": "s35e1",
+      "segment_id": 35,
+      "start": 10,
+      "end": 10,
+      "type": "MLModel",
+      "text": "BERT"
+    },
+    {
+      "id": "s35e2",
+      "segment_id": 35,
+      "start": 13,
+      "end": 13,
+      "type": "MLModel",
+      "text": "BERTweet"
+    },
+    {
+      "id": "s35e3",
+      "segment_id": 35,
+      "start": 19,
+      "end": 20,
+      "type": "Task",
+      "text": "SocialNLP tasks"
+    },
+    {
+      "id": "s35e4",
+      "segment_id": 35,
+      "start": 27,
+      "end": 27,
+      "type": "DatasetGeneric",
+      "text": "tweets"
+    },
+    {
+      "id": "s36e0",
+      "segment_id": 36,
+      "start": 5,
+      "end": 5,
+      "type": "DatasetGeneric",
+      "text": "Spanish"
+    },
+    {
+      "id": "s36e1",
+      "segment_id": 36,
+      "start": 6,
+      "end": 6,
+      "type": "MLModel",
+      "text": "BETO"
+    },
+    {
+      "id": "s36e2",
+      "segment_id": 36,
+      "start": 18,
+      "end": 18,
+      "type": "Method",
+      "text": "F1"
+    },
+    {
+      "id": "s36e3",
+      "segment_id": 36,
+      "start": 22,
+      "end": 22,
+      "type": "MLModel",
+      "text": "mbert"
+    },
+    {
+      "id": "s36e4",
+      "segment_id": 36,
+      "start": 24,
+      "end": 24,
+      "type": "MLModel",
+      "text": "distilbert"
+    },
+    {
+      "id": "s36e5",
+      "segment_id": 36,
+      "start": 34,
+      "end": 35,
+      "type": "MLModelGeneric",
+      "text": "monolingual models"
+    },
+    {
+      "id": "s36e6",
+      "segment_id": 36,
+      "start": 38,
+      "end": 39,
+      "type": "MLModelGeneric",
+      "text": "multilingual ones"
+    },
+    {
+      "id": "s37e0",
+      "segment_id": 37,
+      "start": 3,
+      "end": 3,
+      "type": "MLModelGeneric",
+      "text": "models"
+    },
+    {
+      "id": "s37e1",
+      "segment_id": 37,
+      "start": 6,
+      "end": 6,
+      "type": "MLModel",
+      "text": "BERTweet"
+    },
+    {
+      "id": "s37e2",
+      "segment_id": 37,
+      "start": 10,
+      "end": 10,
+      "type": "ReferenceLink",
+      "text": "5"
+    },
+    {
+      "id": "s37e3",
+      "segment_id": 37,
+      "start": 25,
+      "end": 28,
+      "type": "Method",
+      "text": "huggingface 's model hub"
+    },
+    {
+      "id": "s38e0",
+      "segment_id": 38,
+      "start": 5,
+      "end": 5,
+      "type": "MLModel",
+      "text": "pysentimiento"
+    },
+    {
+      "id": "s38e1",
+      "segment_id": 38,
+      "start": 11,
+      "end": 12,
+      "type": "Task",
+      "text": "Sentiment Analysis"
+    },
+    {
+      "id": "s38e2",
+      "segment_id": 38,
+      "start": 14,
+      "end": 15,
+      "type": "Task",
+      "text": "Emotion Analysis"
+    },
+    {
+      "id": "s39e0",
+      "segment_id": 39,
+      "start": 2,
+      "end": 9,
+      "type": "MLModelGeneric",
+      "text": "state - of - the - art models"
+    },
+    {
+      "id": "s39e1",
+      "segment_id": 39,
+      "start": 26,
+      "end": 27,
+      "type": "Task",
+      "text": "opinion mining"
+    },
+    {
+      "id": "s39e2",
+      "segment_id": 39,
+      "start": 29,
+      "end": 30,
+      "type": "DataSource",
+      "text": "social networks"
+    },
+    {
+      "id": "s41e0",
+      "segment_id": 41,
+      "start": 10,
+      "end": 12,
+      "type": "Task",
+      "text": "hate speech detection"
+    },
+    {
+      "id": "s41e1",
+      "segment_id": 41,
+      "start": 14,
+      "end": 15,
+      "type": "Task",
+      "text": "irony detection"
+    },
+    {
+      "id": "s42e0",
+      "segment_id": 42,
+      "start": 7,
+      "end": 9,
+      "type": "MLModelGeneric",
+      "text": "powerful pretrained models"
+    },
+    {
+      "id": "s43e0",
+      "segment_id": 43,
+      "start": 6,
+      "end": 13,
+      "type": "URL",
+      "text": "http :/ / github.com / pysentimiento / pysentimiento"
+    }
+  ],
+  "relations": [
+    {
+      "head": "s0e2",
+      "type": "sourcedFrom",
+      "tail": "s0e3"
+    },
+    {
+      "head": "s10e1",
+      "type": "trainedOn",
+      "tail": "s10e0"
+    },
+    {
+      "head": "s11e0",
+      "type": "appliedTo",
+      "tail": "s11e2"
+    },
+    {
+      "head": "s11e1",
+      "type": "appliedTo",
+      "tail": "s11e2"
+    },
+    {
+      "head": "s12e0",
+      "type": "appliedTo",
+      "tail": "s12e3"
+    },
+    {
+      "head": "s12e0",
+      "type": "citation",
+      "tail": "s12e1"
+    },
+    {
+      "head": "s12e0",
+      "type": "coreference",
+      "tail": "s12e2"
+    },
+    {
+      "head": "s12e2",
+      "type": "appliedTo",
+      "tail": "s12e3"
+    },
+    {
+      "head": "s12e2",
+      "type": "citation",
+      "tail": "s12e1"
+    },
+    {
+      "head": "s14e0",
+      "type": "appliedTo",
+      "tail": "s14e2"
+    },
+    {
+      "head": "s14e1",
+      "type": "appliedTo",
+      "tail": "s14e2"
+    },
+    {
+      "head": "s14e1",
+      "type": "isHyponymOf",
+      "tail": "s14e3"
+    },
+    {
+      "head": "s14e1",
+      "type": "isPartOf",
+      "tail": "s14e0"
+    },
+    {
+      "head": "s14e1",
+      "type": "isPartOf",
+      "tail": "s14e4"
+    },
+    {
+      "head": "s14e3",
+      "type": "appliedTo",
+      "tail": "s14e2"
+    },
+    {
+      "head": "s14e3",
+      "type": "isHyponymOf",
+      "tail": "s14e1"
+    },
+    {
+      "head": "s14e3",
+      "type": "isHyponymOf",
+      "tail": "s14e4"
+    },
+    {
+      "head": "s14e4",
+      "type": "appliedTo",
+      "tail": "s14e2"
+    },
+    {
+      "head": "s14e4",
+      "type": "isHyponymOf",
+      "tail": "s14e1"
+    },
+    {
+      "head": "s14e4",
+      "type": "isHyponymOf",
+      "tail": "s14e3"
+    },
+    {
+      "head": "s16e0",
+      "type": "appliedTo",
+      "tail": "s16e5"
+    },
+    {
+      "head": "s16e0",
+      "type": "appliedTo",
+      "tail": "s16e6"
+    },
+    {
+      "head": "s16e0",
+      "type": "citation",
+      "tail": "s16e1"
+    },
+    {
+      "head": "s16e1",
+      "type": "citation",
+      "tail": "s16e0"
+    },
+    {
+      "head": "s16e2",
+      "type": "appliedTo",
+      "tail": "s16e5"
+    },
+    {
+      "head": "s16e2",
+      "type": "appliedTo",
+      "tail": "s16e6"
+    },
+    {
+      "head": "s16e2",
+      "type": "isHyponymOf",
+      "tail": "s16e3"
+    },
+    {
+      "head": "s16e3",
+      "type": "appliedTo",
+      "tail": "s16e5"
+    },
+    {
+      "head": "s16e3",
+      "type": "citation",
+      "tail": "s16e4"
+    },
+    {
+      "head": "s16e3",
+      "type": "isHyponymOf",
+      "tail": "s16e2"
+    },
+    {
+      "head": "s17e0",
+      "type": "isHyponymOf",
+      "tail": "s17e1"
+    },
+    {
+      "head": "s17e1",
+      "type": "isHyponymOf",
+      "tail": "s17e0"
+    },
+    {
+      "head": "s17e2",
+      "type": "appliedTo",
+      "tail": "s17e0"
+    },
+    {
+      "head": "s18e3",
+      "type": "sourcedFrom",
+      "tail": "s18e2"
+    },
+    {
+      "head": "s19e0",
+      "type": "citation",
+      "tail": "s19e4"
+    },
+    {
+      "head": "s19e0",
+      "type": "citation",
+      "tail": "s19e8"
+    },
+    {
+      "head": "s19e0",
+      "type": "isPartOf",
+      "tail": "s19e1"
+    },
+    {
+      "head": "s19e0",
+      "type": "isPartOf",
+      "tail": "s19e2"
+    },
+    {
+      "head": "s19e0",
+      "type": "isPartOf",
+      "tail": "s19e5"
+    },
+    {
+      "head": "s19e0",
+      "type": "isPartOf",
+      "tail": "s19e6"
+    },
+    {
+      "head": "s19e1",
+      "type": "isPartOf",
+      "tail": "s19e0"
+    },
+    {
+      "head": "s19e1",
+      "type": "isPartOf",
+      "tail": "s19e2"
+    },
+    {
+      "head": "s19e2",
+      "type": "citation",
+      "tail": "s19e4"
+    },
+    {
+      "head": "s19e2",
+      "type": "citation",
+      "tail": "s19e8"
+    },
+    {
+      "head": "s19e2",
+      "type": "isPartOf",
+      "tail": "s19e0"
+    },
+    {
+      "head": "s19e2",
+      "type": "isPartOf",
+      "tail": "s19e1"
+    },
+    {
+      "head": "s19e3",
+      "type": "isPartOf",
+      "tail": "s19e0"
+    },
+    {
+      "head": "s19e3",
+      "type": "isPartOf",
+      "tail": "s19e1"
+    },
+    {
+      "head": "s19e3",
+      "type": "isPartOf",
+      "tail": "s19e2"
+    },
+    {
+      "head": "s19e4",
+      "type": "citation",
+      "tail": "s19e1"
+    },
+    {
+      "head": "s19e4",
+      "type": "citation",
+      "tail": "s19e2"
+    },
+    {
+      "head": "s19e5",
+      "type": "benchmarkFor",
+      "tail": "s19e7"
+    },
+    {
+      "head": "s19e5",
+      "type": "citation",
+      "tail": "s19e8"
+    },
+    {
+      "head": "s19e5",
+      "type": "isPartOf",
+      "tail": "s19e0"
+    },
+    {
+      "head": "s19e5",
+      "type": "isPartOf",
+      "tail": "s19e6"
+    },
+    {
+      "head": "s19e6",
+      "type": "citation",
+      "tail": "s19e4"
+    },
+    {
+      "head": "s19e6",
+      "type": "citation",
+      "tail": "s19e8"
+    },
+    {
+      "head": "s19e6",
+      "type": "coreference",
+      "tail": "s19e7"
+    },
+    {
+      "head": "s19e6",
+      "type": "isPartOf",
+      "tail": "s19e0"
+    },
+    {
+      "head": "s19e6",
+      "type": "isPartOf",
+      "tail": "s19e5"
+    },
+    {
+      "head": "s19e7",
+      "type": "isPartOf",
+      "tail": "s19e5"
+    },
+    {
+      "head": "s19e8",
+      "type": "citation",
+      "tail": "s19e5"
+    },
+    {
+      "head": "s21e0",
+      "type": "size",
+      "tail": "s21e1"
+    },
+    {
+      "head": "s22e0",
+      "type": "size",
+      "tail": "s22e1"
+    },
+    {
+      "head": "s22e1",
+      "type": "isPartOf",
+      "tail": "s22e0"
+    },
+    {
+      "head": "s22e2",
+      "type": "isPartOf",
+      "tail": "s22e0"
+    },
+    {
+      "head": "s23e1",
+      "type": "benchmarkFor",
+      "tail": "s23e0"
+    },
+    {
+      "head": "s23e1",
+      "type": "citation",
+      "tail": "s23e2"
+    },
+    {
+      "head": "s23e1",
+      "type": "coreference",
+      "tail": "s23e3"
+    },
+    {
+      "head": "s23e3",
+      "type": "benchmarkFor",
+      "tail": "s23e0"
+    },
+    {
+      "head": "s25e0",
+      "type": "appliedTo",
+      "tail": "s25e3"
+    },
+    {
+      "head": "s25e0",
+      "type": "isComparedTo",
+      "tail": "s25e4"
+    },
+    {
+      "head": "s25e1",
+      "type": "appliedTo",
+      "tail": "s25e3"
+    },
+    {
+      "head": "s25e1",
+      "type": "architecture",
+      "tail": "s25e0"
+    },
+    {
+      "head": "s25e1",
+      "type": "isComparedTo",
+      "tail": "s25e4"
+    },
+    {
+      "head": "s25e3",
+      "type": "appliedTo",
+      "tail": "s25e0"
+    },
+    {
+      "head": "s25e4",
+      "type": "architecture",
+      "tail": "s25e5"
+    },
+    {
+      "head": "s26e0",
+      "type": "citation",
+      "tail": "s26e1"
+    },
+    {
+      "head": "s26e0",
+      "type": "isPartOf",
+      "tail": "s26e4"
+    },
+    {
+      "head": "s26e1",
+      "type": "citation",
+      "tail": "s26e0"
+    },
+    {
+      "head": "s26e2",
+      "type": "citation",
+      "tail": "s26e3"
+    },
+    {
+      "head": "s26e2",
+      "type": "isPartOf",
+      "tail": "s26e4"
+    },
+    {
+      "head": "s26e3",
+      "type": "citation",
+      "tail": "s26e2"
+    },
+    {
+      "head": "s26e4",
+      "type": "isPartOf",
+      "tail": "s26e0"
+    },
+    {
+      "head": "s28e0",
+      "type": "citation",
+      "tail": "s28e1"
+    },
+    {
+      "head": "s28e0",
+      "type": "citation",
+      "tail": "s28e5"
+    },
+    {
+      "head": "s28e1",
+      "type": "citation",
+      "tail": "s28e0"
+    },
+    {
+      "head": "s28e2",
+      "type": "citation",
+      "tail": "s28e1"
+    },
+    {
+      "head": "s28e2",
+      "type": "citation",
+      "tail": "s28e3"
+    },
+    {
+      "head": "s28e3",
+      "type": "citation",
+      "tail": "s28e2"
+    },
+    {
+      "head": "s28e4",
+      "type": "citation",
+      "tail": "s28e5"
+    },
+    {
+      "head": "s28e4",
+      "type": "citation",
+      "tail": "s28e8"
+    },
+    {
+      "head": "s28e5",
+      "type": "citation",
+      "tail": "s28e4"
+    },
+    {
+      "head": "s28e6",
+      "type": "isPartOf",
+      "tail": "s28e7"
+    },
+    {
+      "head": "s28e6",
+      "type": "isPartOf",
+      "tail": "s28e9"
+    },
+    {
+      "head": "s28e7",
+      "type": "citation",
+      "tail": "s28e10"
+    },
+    {
+      "head": "s28e7",
+      "type": "citation",
+      "tail": "s28e8"
+    },
+    {
+      "head": "s28e7",
+      "type": "isHyponymOf",
+      "tail": "s28e6"
+    },
+    {
+      "head": "s28e8",
+      "type": "citation",
+      "tail": "s28e7"
+    },
+    {
+      "head": "s28e9",
+      "type": "citation",
+      "tail": "s28e10"
+    },
+    {
+      "head": "s28e9",
+      "type": "isHyponymOf",
+      "tail": "s28e6"
+    },
+    {
+      "head": "s29e1",
+      "type": "citation",
+      "tail": "s29e2"
+    },
+    {
+      "head": "s29e1",
+      "type": "coreference",
+      "tail": "s29e3"
+    },
+    {
+      "head": "s29e1",
+      "type": "isBasedOn",
+      "tail": "s29e4"
+    },
+    {
+      "head": "s29e2",
+      "type": "citation",
+      "tail": "s29e1"
+    },
+    {
+      "head": "s29e3",
+      "type": "citation",
+      "tail": "s29e2"
+    },
+    {
+      "head": "s29e3",
+      "type": "isBasedOn",
+      "tail": "s29e4"
+    },
+    {
+      "head": "s29e3",
+      "type": "isHyponymOf",
+      "tail": "s29e0"
+    },
+    {
+      "head": "s29e4",
+      "type": "isBasedOn",
+      "tail": "s29e1"
+    },
+    {
+      "head": "s29e4",
+      "type": "isHyponymOf",
+      "tail": "s29e3"
+    },
+    {
+      "head": "s2e0",
+      "type": "appliedTo",
+      "tail": "s2e1"
+    },
+    {
+      "head": "s2e0",
+      "type": "appliedTo",
+      "tail": "s2e2"
+    },
+    {
+      "head": "s2e1",
+      "type": "isHyponymOf",
+      "tail": "s2e2"
+    },
+    {
+      "head": "s30e0",
+      "type": "trainedOn",
+      "tail": "s30e3"
+    },
+    {
+      "head": "s30e1",
+      "type": "citation",
+      "tail": "s30e2"
+    },
+    {
+      "head": "s30e1",
+      "type": "usedFor",
+      "tail": "s30e0"
+    },
+    {
+      "head": "s30e2",
+      "type": "citation",
+      "tail": "s30e1"
+    },
+    {
+      "head": "s30e3",
+      "type": "trainedOn",
+      "tail": "s30e0"
+    },
+    {
+      "head": "s31e1",
+      "type": "appliedTo",
+      "tail": "s31e0"
+    },
+    {
+      "head": "s31e1",
+      "type": "appliedTo",
+      "tail": "s31e2"
+    },
+    {
+      "head": "s31e2",
+      "type": "appliedTo",
+      "tail": "s31e0"
+    },
+    {
+      "head": "s32e1",
+      "type": "citation",
+      "tail": "s32e2"
+    },
+    {
+      "head": "s32e2",
+      "type": "citation",
+      "tail": "s32e1"
+    },
+    {
+      "head": "s34e0",
+      "type": "coreference",
+      "tail": "s34e1"
+    },
+    {
+      "head": "s34e1",
+      "type": "isComparedTo",
+      "tail": "s34e2"
+    },
+    {
+      "head": "s35e0",
+      "type": "appliedTo",
+      "tail": "s35e3"
+    },
+    {
+      "head": "s35e0",
+      "type": "isComparedTo",
+      "tail": "s35e1"
+    },
+    {
+      "head": "s35e1",
+      "type": "isComparedTo",
+      "tail": "s35e2"
+    },
+    {
+      "head": "s35e2",
+      "type": "appliedTo",
+      "tail": "s35e3"
+    },
+    {
+      "head": "s35e2",
+      "type": "trainedOn",
+      "tail": "s35e4"
+    },
+    {
+      "head": "s36e1",
+      "type": "isComparedTo",
+      "tail": "s36e3"
+    },
+    {
+      "head": "s36e1",
+      "type": "isComparedTo",
+      "tail": "s36e4"
+    },
+    {
+      "head": "s36e1",
+      "type": "isComparedTo",
+      "tail": "s36e6"
+    },
+    {
+      "head": "s36e1",
+      "type": "isHyponymOf",
+      "tail": "s36e5"
+    },
+    {
+      "head": "s36e3",
+      "type": "isHyponymOf",
+      "tail": "s36e6"
+    },
+    {
+      "head": "s36e5",
+      "type": "isComparedTo",
+      "tail": "s36e6"
+    },
+    {
+      "head": "s36e5",
+      "type": "isHyponymOf",
+      "tail": "s36e1"
+    },
+    {
+      "head": "s36e6",
+      "type": "isHyponymOf",
+      "tail": "s36e3"
+    },
+    {
+      "head": "s37e0",
+      "type": "isComparedTo",
+      "tail": "s37e1"
+    },
+    {
+      "head": "s37e1",
+      "type": "citation",
+      "tail": "s37e2"
+    },
+    {
+      "head": "s38e0",
+      "type": "appliedTo",
+      "tail": "s38e1"
+    },
+    {
+      "head": "s38e0",
+      "type": "appliedTo",
+      "tail": "s38e2"
+    },
+    {
+      "head": "s39e0",
+      "type": "appliedTo",
+      "tail": "s39e1"
+    },
+    {
+      "head": "s7e0",
+      "type": "appliedTo",
+      "tail": "s7e1"
+    },
+    {
+      "head": "s7e1",
+      "type": "appliedTo",
+      "tail": "s7e0"
+    },
+    {
+      "head": "s8e0",
+      "type": "appliedTo",
+      "tail": "s8e2"
+    },
+    {
+      "head": "s8e0",
+      "type": "appliedTo",
+      "tail": "s8e3"
+    },
+    {
+      "head": "s8e0",
+      "type": "isHyponymOf",
+      "tail": "s8e1"
+    },
+    {
+      "head": "s8e1",
+      "type": "appliedTo",
+      "tail": "s8e2"
+    },
+    {
+      "head": "s8e1",
+      "type": "appliedTo",
+      "tail": "s8e3"
+    },
+    {
+      "head": "s8e1",
+      "type": "isPartOf",
+      "tail": "s8e0"
+    }
+  ]
+}

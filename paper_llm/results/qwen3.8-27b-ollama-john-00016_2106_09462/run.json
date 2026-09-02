@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "method": "GSAP-ERE paper LLM pipeline reconstruction",
+  "method_separation": "not the full-article zero-shot method in zero_shot/",
+  "paper_reported_steps": {
+    "unit": "sentence",
+    "pipeline": [
+      "NER",
+      "ordered predicted-entity-pair RE"
+    ],
+    "ner_shots": 10,
+    "re_shots": 1,
+    "example_selection": "similar+diverse from training split",
+    "retriever": "sentence-transformers/multi-qa-mpnet-base-cos-v1",
+    "inference_framework": "Ollama",
+    "temperature": 0.0
+  },
+  "unreleased_details_reconstructed": [
+    "exact Appendix A.3 NER and RE prompt wording",
+    "exact unique-label re-ranking implementation",
+    "exact LLM response parsing"
+  ],
+  "target": {
+    "document_id": "00016_2106_09462.txt",
+    "data_path": "/home/pgajo/gsap-ere/data/train.jsonl",
+    "sentence_count": 44,
+    "gold_annotations_sent_to_llm": false,
+    "excluded_from_demonstrations": true
+  },
+  "model": {
+    "requested": "qwen3.8:27b",
+    "ollama_record": {
+      "name": "qwen3.8:27b",
+      "model": "qwen3.8:27b",
+      "digest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643",
+      "size": 17741872154,
+      "modified_at": "2026-09-02T18:16:25.025560468+02:00",
+      "details": {
+        "parent_model": "qwen3.8:27b-q4_K_M",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "27.3B",
+        "quantization_level": "Q4_K_M",
+        "context_length": 262144,
+        "embedding_length": 5120
+      }
+    },
+    "think": false
+  },
+  "retrieval": {
+    "model": "sentence-transformers/multi-qa-mpnet-base-cos-v1",
+    "device": "cpu",
+    "training_sentence_count": 20712,
+    "training_pair_example_count": 189786,
+    "pool_size": 100
+  },
+  "request": {
+    "format": "json",
+    "temperature": 0.0,
+    "num_ctx": 32768,
+    "ner_num_predict": 2048,
+    "re_num_predict": 64,
+    "keep_alive": "30m"
+  },
+  "counts": {
+    "predicted_entities": 148,
+    "ordered_re_candidates": 584,
+    "predicted_non_nil_relations": 151,
+    "new_calls_this_attempt": 628,
+    "resumed_calls": 0,
+    "response_warning_count": 0
+  },
+  "artifacts": {
+    "prediction": {
+      "path": "paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/prediction.json",
+      "sha256": "2fa9e0b53eb85fb5de5099f4f340e196c5f9287b075ba64992f579429df4a4d0"
+    },
+    "trace": {
+      "path": "paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/trace.jsonl",
+      "sha256": "6436715ae05984e95f32dfba2230bd617da364aab69d4c0175e78c99e5d8f148"
+    },
+    "retrieval": {
+      "path": "paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/retrieval.json",
+      "sha256": "ba518bd975fde3caa95d065f5dc87883423b33a83f1280ef0cf6a7b91a33ab08"
+    }
+  },
+  "inputs": {
+    "target_data_sha256": "6d96539b482b4ca5ab8cc9c2d25f2158daf73cd2ebbffd9907a713ab203ec7a8",
+    "training_data_sha256": "6d96539b482b4ca5ab8cc9c2d25f2158daf73cd2ebbffd9907a713ab203ec7a8",
+    "vocabulary_sha256": "06b3c4ead6b5cfd05276955b66ddb5ef4754ad5e534de556e9eeabfd1909b0a1",
+    "ner_template_sha256": "5f4e49aa12817ca6ca952bf143a73cc9a3008b3df1d35c17f38e4f59f67837e6",
+    "re_template_sha256": "b1507abc02a03a776ce1d430c9438c82df9852c9f94813723d0162441848e046",
+    "inference_script_sha256": "78780b3bf053b7c6e3c4218215d6d9770f88110966a14b11b891922c9b5a2410"
+  },
+  "software": {
+    "python": "3.10.12",
+    "ollama_server": "0.33.2",
+    "sentence-transformers": "5.1.2",
+    "torch": "2.8.0+cpu",
+    "gsapere": "0.2.4"
+  },
+  "system": {
+    "hostname": "john",
+    "platform": "Linux-5.15.0-186-generic-x86_64-with-glibc2.35",
+    "gpus": [
+      "NVIDIA RTX 5000 Ada Generation, GPU-5baacfef-5fc2-4632-e86f-c16e28d55e2d, 32760 MiB, 580.173.02"
+    ]
+  },
+  "git_commit": "e219f38f2686b712d1e4916009109ebe11f4a18e",
+  "started_at": "2026-09-02T16:16:25.085636+00:00",
+  "finished_at": "2026-09-02T16:33:44.597323+00:00",
+  "wall_seconds": 1039.511707
+}
