@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "run_id": "gpt-5.6-sol-max-work",
+  "source": "user-supplied preliminary test",
+  "inference_metadata_available": false,
+  "file_timestamp_utc": "2026-09-02T15:33:06.779758+00:00",
+  "prompt": {
+    "path": "zero_shot/prompt.md",
+    "sha256": "e5fceceb657339aad3218a11def6935a4bc3130c1f5d04d27ee2cde2192ba7a0"
+  },
+  "prediction": {
+    "path": "zero_shot/results/gpt-5.6-sol-max-work/prediction.json",
+    "sha256": "b407df5be08e70eb8ee1e1a4e2c37cefbeb448c4ed1942a4ef1ab3237a08473d"
+  },
+  "scores": {
+    "path": "zero_shot/results/gpt-5.6-sol-max-work/scores.json",
+    "sha256": "c731e872f002a412f69eab103d5818c4acb26a9250237571cc5f45154be613bc"
+  }
+}

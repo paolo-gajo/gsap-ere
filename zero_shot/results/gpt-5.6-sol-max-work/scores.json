@@ -1,0 +1,50 @@
+{
+  "document_id": "00016_2106_09462.txt",
+  "averaging": "micro",
+  "matching": "exact token spans and case-sensitive labels",
+  "ner": {
+    "precision": 0.5,
+    "recall": 0.6048387096774194,
+    "f1": 0.5474452554744526,
+    "precision_percent": 50.0,
+    "recall_percent": 60.48,
+    "f1_percent": 54.74,
+    "tp": 75,
+    "fp": 75,
+    "fn": 49,
+    "gold": 124,
+    "predicted": 150
+  },
+  "rel": {
+    "precision": 0.22105263157894736,
+    "recall": 0.3559322033898305,
+    "f1": 0.27272727272727276,
+    "precision_percent": 22.11,
+    "recall_percent": 35.59,
+    "f1_percent": 27.27,
+    "tp": 21,
+    "fp": 74,
+    "fn": 38,
+    "gold": 59,
+    "predicted": 95
+  },
+  "rel_plus": {
+    "precision": 0.21052631578947367,
+    "recall": 0.3389830508474576,
+    "f1": 0.2597402597402597,
+    "precision_percent": 21.05,
+    "recall_percent": 33.9,
+    "f1_percent": 25.97,
+    "tp": 20,
+    "fp": 75,
+    "fn": 39,
+    "gold": 59,
+    "predicted": 95
+  },
+  "gold_counts": {
+    "entity_annotation_rows": 125,
+    "entity_unique_spans": 124,
+    "relations": 59
+  },
+  "warnings": []
+}

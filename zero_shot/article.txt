@@ -1,0 +1,87 @@
+Extracting opinions from texts has gathered a lot of interest in the last years, as we are experiencing an unprecedented volume of usergenerated content in social networks and other places.
+
+A problem that social researchers find in using opinion mining tools is that they are usually behind commercial APIs and unavailable for other languages than English.
+
+To address these issues, we present pysentimiento, a multilingual Python toolkit for Sentiment Analysis and other Social NLP tasks.
+
+This open-source library brings state-of-the-art models for Spanish and English in a black-box fashion, allowing researchers to easily access these techniques.
+
+Extracting opinions and states-of-mind from user-generated context has drawn a lot of attention in the past years, particularly since the eclosion of Social Networks.
+
+Applications for these techniques come in many flavors, such as commercial uses, political campaigns, and even studying the changing patterns of emotions during the COVID-19 pandemics [8].
+
+An issue that inhibits users of these opinion-mining technologies is that there is not a big spectrum of libraries for these tasks; mainly, one has to resort paid APIs provided by companies, or rely on models that are very out-of-the-date or even unavailable for a given language different from English.
+
+In order to foster research using sentiment and other opinion-mining analysis as black-box tools, we present pysentimiento, a multilingual toolkit for these tasks.
+
+pysentimiento provides state-of-the-art transformed-based models for Sentiment Analysis and Emotion Analysis in an out-of-the-box fashion, with current support of Spanish and English.
+
+This library is released as free and open-source software 4 for anyone interested in using it for research purposes.
+
+We now describe the datasets we used, the models we trained, the results, and the selected default models in our library.
+
+Appart from the commercial APIs, there are not many options of libraries providing out-of-the-box models for Sentiment Analysis.
+
+VADER [7] is a lexicon and rule-based library for Sentiment Analysis in English, specially crafted for Social Media.
+
+It provides multilingual support through translation from the target language to English.
+
+Textblob is a library providing pretrained models for many NLP tasks using classic machine learning models such as Naive Bayes.
+
+Support is primary in English, with some adapters for other languages.
+
+Transformers [14] is a library providing pretrained language models such as BERT [3] for classification and language-generation tasks.
+
+It also provides pipelines for Sentiment Analysis and other NLP tasks but-as far as we knowonly English models are provided.
+
+We tackled two tasks: Sentiment Analysis and Emotion Analysis, both on Twitter datasets.
+
+For the former, we used two datasets: TASS 2020 Task 1 [4] and SemEval 2017 Task 4 Subtask 1 [12].
+
+Both datasets were labeled with general polarity using positive, negative and neutral outcomes.
+
+We merged together the Spanish subsets for each dialect, summing up to 6,000 tweets (CHECK THIS!).
+
+The English dataset has around 50k tweets for training and around 12k for testing.
+
+Regarding Emotion Analysis, we used EmoEvent [1], a multilingual emotion dataset labelled with the six Ekman's basic emotions (anger, disgust, fear, joy, sadness, surprise) and also a "neutral" emotion.
+
+Table 1 summarizes this info along the number of instances used for train and test.
+
+Transformer-based models have become state-of-the-art in NLP, both for classification and generation tasks, displacing models based on recurrent networks.
+
+BERT [3] and GPT [11] are flagships of these models.
+
+We performed experiments with several models.
+
+For English, we tested BERT base [3], RoBERTa base [9], BERTweet [10] and multilingual models, namely Dis-tilBERT [13] and mBERT [3].
+
+Spanish has lesser availability of models: we used BETO [2], a Spanish-trained version of BERT, and the aforementioned multilingual models.
+
+Models were trained in a fairly standard way, using small triangular learning rates (∼10−5) [6] for 5 epochs (10 in the case of SemEval dataset as it is big enough).
+
+For the emotion datasets we used class weights in the cross-entropy loss as it is somehow imbalanced.
+
+Training (and posterior delivering) is done using transformers [14] library.
+
+Table 2 contains the results of the experiments for both tasks and languages.
+
+In English, the best performing model is BerTweet but just with a slight difference with RoBERTa.
+
+Both are powerful models known to have better performance than BERT; particularly BERTweet is very suited to these SocialNLP tasks as it is entirely trained on tweets.
+
+We can observe that in Spanish BETO yields the best results for a large margin (around 6 F1 points) against mbert and distilbert, something expected as it is well known that monolingual models greatly outperform multilingual ones.
+
+Although there are models similar to BERTweet in Spanish [5] we were not able to test them as they were not available in huggingface's model hub.
+
+In this work we presented pysentimiento, a multilingual toolkit for Sentiment Analysis and Emotion Analysis.
+
+We provide state-of-the-art models and an easyto-use interface in Python, expecting this will help researchers interested in opinion mining from social networks.
+
+For the time being, we support these two tasks.
+
+We plan to expand to more tasks, such as hate speech detection, irony detection, and others.
+
+Also, we plan to provide more powerful pretrained models for other languages (mainly Spanish) to enhance performance in other languages than English.
+
+4: Code is available at http://github.com/pysentimiento/pysentimiento
