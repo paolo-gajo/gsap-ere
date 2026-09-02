@@ -415,15 +415,19 @@ def build_re_prompt(
     target: SentenceRecord,
     subject: Entity,
     object_: Entity,
-    example_record: SentenceRecord,
-    example: PairExample,
+    example_record: SentenceRecord | None,
+    example: PairExample | None,
     template: str,
 ) -> str:
-    example_block = (
-        "## Example 1\n\n"
-        f"Input: {json.dumps(pair_input(example_record, example.subject, example.object), ensure_ascii=False)}\n\n"
-        f"Output: {json.dumps({'label': example.label})}"
-    )
+    if (example_record is None) != (example is None):
+        raise ValueError("RE example record and annotation must both be present or absent")
+    example_block = ""
+    if example_record is not None and example is not None:
+        example_block = (
+            "## Example 1\n\n"
+            f"Input: {json.dumps(pair_input(example_record, example.subject, example.object), ensure_ascii=False)}\n\n"
+            f"Output: {json.dumps({'label': example.label})}"
+        )
     return render_template(
         template,
         {
@@ -712,8 +716,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-    if args.ner_shots != 10 or args.re_shots != 1:
-        parser.error("the paper configuration requires --ner-shots 10 and --re-shots 1")
+    if (args.ner_shots, args.re_shots) not in {(10, 1), (0, 0)}:
+        parser.error("supported ICL configurations are --ner-shots 10 --re-shots 1 or both zero")
     if args.resume and args.overwrite:
         parser.error("--resume and --overwrite are mutually exclusive")
     return args
@@ -721,6 +725,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    zero_icl = args.ner_shots == 0
     started_at = utc_now()
     wall_start = time.monotonic()
     output_dir = args.output_dir.resolve()
@@ -741,26 +746,32 @@ def main() -> None:
     targets = [record for record in target_records_all if record.doc_id == args.document_id]
     if not targets:
         raise RuntimeError(f"document {args.document_id!r} not found in {args.target_data}")
-    training_all = load_records(args.training_data, vocabulary)
-    training = [record for record in training_all if record.doc_id != args.document_id]
-    if len(training) < args.ner_shots:
-        raise RuntimeError("not enough leakage-free training sentences for NER examples")
-
-    print(
-        f"Embedding {len(training)} training sentences and {len(targets)} target sentences "
-        f"with {args.retriever}",
-        flush=True,
-    )
-    similarities = compute_similarities(
-        training,
-        targets,
-        args.retriever,
-        args.retriever_device,
-        args.embedding_batch_size,
-    )
-    pair_examples, pairs_by_signature = build_pair_examples(training)
-    if not pair_examples:
-        raise RuntimeError("training data has no RE demonstration candidates")
+    training: list[SentenceRecord] = []
+    similarities: Any = None
+    pair_examples: list[PairExample] = []
+    pairs_by_signature: dict[tuple[str, str], list[int]] = {}
+    if zero_icl:
+        print("Running with zero ICL examples; retrieval is disabled", flush=True)
+    else:
+        training_all = load_records(args.training_data, vocabulary)
+        training = [record for record in training_all if record.doc_id != args.document_id]
+        if len(training) < args.ner_shots:
+            raise RuntimeError("not enough leakage-free training sentences for NER examples")
+        print(
+            f"Embedding {len(training)} training sentences and {len(targets)} target sentences "
+            f"with {args.retriever}",
+            flush=True,
+        )
+        similarities = compute_similarities(
+            training,
+            targets,
+            args.retriever,
+            args.retriever_device,
+            args.embedding_batch_size,
+        )
+        pair_examples, pairs_by_signature = build_pair_examples(training)
+        if not pair_examples:
+            raise RuntimeError("training data has no RE demonstration candidates")
 
     ner_template = args.ner_template.read_text(encoding="utf-8")
     re_template = args.re_template.read_text(encoding="utf-8")
@@ -771,12 +782,14 @@ def main() -> None:
     new_calls = 0
 
     for target_index, target in enumerate(targets):
-        selected_indices = select_ner_examples(
-            training,
-            similarities[target_index],
-            args.ner_shots,
-            args.retrieval_pool_size,
-        )
+        selected_indices = []
+        if not zero_icl:
+            selected_indices = select_ner_examples(
+                training,
+                similarities[target_index],
+                args.ner_shots,
+                args.retrieval_pool_size,
+            )
         examples = [training[index] for index in selected_indices]
         prompt = build_ner_prompt(target, examples, ner_template)
         key = f"ner:{target.sentence_id}"
@@ -824,15 +837,18 @@ def main() -> None:
                 if subject_index == object_index:
                     continue
                 pair_number += 1
-                example = select_re_example(
-                    subject,
-                    object_,
-                    pair_examples,
-                    pairs_by_signature,
-                    training,
-                    similarities[target_index],
-                )
-                example_record = training[example.record_index]
+                example: PairExample | None = None
+                example_record: SentenceRecord | None = None
+                if not zero_icl:
+                    example = select_re_example(
+                        subject,
+                        object_,
+                        pair_examples,
+                        pairs_by_signature,
+                        training,
+                        similarities[target_index],
+                    )
+                    example_record = training[example.record_index]
                 prompt = build_re_prompt(
                     target, subject, object_, example_record, example, re_template
                 )
@@ -855,7 +871,7 @@ def main() -> None:
                         "token_count": len(target.tokens),
                         "subject_index": subject_index,
                         "object_index": object_index,
-                        "example_key": example_record.key,
+                        "example_key": example_record.key if example_record else None,
                     },
                 )
                 resumed_calls += int(resumed)
@@ -869,7 +885,9 @@ def main() -> None:
                         "sentence_id": target.sentence_id,
                         "subject_index": subject_index,
                         "object_index": object_index,
-                        "example": {
+                        "example": None
+                        if example_record is None or example is None
+                        else {
                             "document_id": example_record.doc_id,
                             "sentence_id": example_record.sentence_id,
                             "subject": entity_dict(example.subject, example_record),
@@ -921,17 +939,21 @@ def main() -> None:
 
     retrieval = {
         "schema_version": 1,
-        "retriever": args.retriever,
+        "retriever": None if zero_icl else args.retriever,
         "selection": {
-            "name": "reconstructed similar+diverse",
+            "name": "none (zero ICL)" if zero_icl else "reconstructed similar+diverse",
             "ner_shots": args.ner_shots,
-            "ner_pool_size": args.retrieval_pool_size,
-            "ner_reranking": "greedy maximum new entity-label coverage, cosine tie-break",
+            "ner_pool_size": 0 if zero_icl else args.retrieval_pool_size,
+            "ner_reranking": None
+            if zero_icl
+            else "greedy maximum new entity-label coverage, cosine tie-break",
             "re_shots": args.re_shots,
-            "re_reranking": "highest sentence cosine among matching ordered entity-type signature",
+            "re_reranking": None
+            if zero_icl
+            else "highest sentence cosine among matching ordered entity-type signature",
         },
-        "training_source": str(args.training_data),
-        "excluded_document_id": args.document_id,
+        "training_source": None if zero_icl else str(args.training_data),
+        "excluded_document_id": None if zero_icl else args.document_id,
         "ner": ner_retrieval,
         "re": re_retrieval,
     }
@@ -957,6 +979,11 @@ def main() -> None:
             "inference_framework": "Ollama",
             "temperature": 0.0,
         },
+        "actual_icl_configuration": {
+            "ner_shots": args.ner_shots,
+            "re_shots": args.re_shots,
+            "retrieval_enabled": not zero_icl,
+        },
         "unreleased_details_reconstructed": [
             "exact Appendix A.3 NER and RE prompt wording",
             "exact unique-label re-ranking implementation",
@@ -975,11 +1002,11 @@ def main() -> None:
             "think": args.think,
         },
         "retrieval": {
-            "model": args.retriever,
-            "device": args.retriever_device,
+            "model": None if zero_icl else args.retriever,
+            "device": None if zero_icl else args.retriever_device,
             "training_sentence_count": len(training),
             "training_pair_example_count": len(pair_examples),
-            "pool_size": args.retrieval_pool_size,
+            "pool_size": 0 if zero_icl else args.retrieval_pool_size,
         },
         "request": {
             "format": "json",
@@ -1014,7 +1041,7 @@ def main() -> None:
         },
         "inputs": {
             "target_data_sha256": sha256_file(args.target_data),
-            "training_data_sha256": sha256_file(args.training_data),
+            "training_data_sha256": None if zero_icl else sha256_file(args.training_data),
             "vocabulary_sha256": sha256_file(args.vocabulary),
             "ner_template_sha256": sha256_file(args.ner_template),
             "re_template_sha256": sha256_file(args.re_template),

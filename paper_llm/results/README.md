@@ -11,4 +11,7 @@ Each directory here contains one sentence-level, two-stage LLM pipeline run:
 Thinking-enabled runs also store each response's separate `raw_thinking` text
 in `trace.jsonl`.
 
+Zero-ICL runs store empty NER example lists and `null` RE examples in
+`retrieval.json`; no retriever or training demonstration pool is used.
+
 These results are methodologically separate from `zero_shot/results/`.

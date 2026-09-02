@@ -69,3 +69,16 @@ This writes to the separate
 directory. Thinking text is retained in `trace.jsonl`. The generation caps are
 raised from 2,048/64 to 4,096/4,096 tokens for NER/RE so the thinking tokens do
 not consume the short structured-answer allowance.
+
+## Zero-ICL ablation
+
+Run the same sentence-level pipeline without demonstrations:
+
+```bash
+ZERO_ICL=1 THINK=0 bash paper_llm/run_john_qwen.sh
+ZERO_ICL=1 THINK=1 bash paper_llm/run_john_qwen.sh
+```
+
+These runs do not load the retriever or read the training demonstration pool.
+Their NER and RE prompt example sections are empty. Results are written to
+separate `*-zero-icl-*` directories.
