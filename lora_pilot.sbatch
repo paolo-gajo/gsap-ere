@@ -40,11 +40,16 @@ if [[ -e "${output_dir}" ]]; then
 fi
 
 module --force purge
-module load StdEnv/2023 python/3.10.13
+module load StdEnv/2023 python/3.11.5
 
 venv_python="${repo_root}/.env/bin/python"
+scorer_python="${repo_root}/.eval-env/bin/python"
 if [[ ! -x "${venv_python}" ]]; then
   echo "error: missing pilot environment at ${repo_root}/.env" >&2
+  exit 1
+fi
+if [[ ! -x "${scorer_python}" ]]; then
+  echo "error: missing scorer environment at ${repo_root}/.eval-env" >&2
   exit 1
 fi
 
@@ -53,9 +58,8 @@ import importlib.metadata as metadata
 
 expected = {
     "accelerate": "1.14.0",
-    "gsapere": "0.2.4",
     "huggingface_hub": "1.18.0",
-    "numpy": "2.2.2",
+    "numpy": "2.4.2",
     "peft": "0.20.0",
     "safetensors": "0.7.0",
     "sentence-transformers": "6.0.0",
@@ -69,12 +73,21 @@ if base_versions != expected:
 print(actual, flush=True)
 PY
 
+"${scorer_python}" - <<'PY'
+import importlib.metadata as metadata
+from gsapere.evaluation.hgere import evaluate
+
+assert metadata.version("gsapere") == "0.2.4"
+print("gsapere evaluator 0.2.4 import passed", flush=True)
+PY
+
 export HF_HOME=/scratch/pgajo/hf_cache
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export GSAPERE_SCORER_PYTHON="${scorer_python}"
 
 gpu_names="$(nvidia-smi --query-gpu=name --format=csv,noheader)"
 if [[ "${gpu_names^^}" != *H100* ]]; then

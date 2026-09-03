@@ -66,6 +66,7 @@ RE_SHOTS = 1
 RETRIEVAL_POOL_SIZE = 100
 NER_MAX_NEW_TOKENS = 2048
 RE_MAX_NEW_TOKENS = 64
+SCORER_PYTHON_ENV = "GSAPERE_SCORER_PYTHON"
 
 REPO_ROOT = Path(__file__).resolve().parent
 TRAIN_DATA = REPO_ROOT / "data" / "train.jsonl"
@@ -119,6 +120,10 @@ def package_version(name: str) -> str | None:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
         return None
+
+
+def scorer_python() -> str:
+    return os.environ.get(SCORER_PYTHON_ENV, sys.executable)
 
 
 def git_commit() -> str | None:
@@ -911,7 +916,7 @@ def evaluate_variant(
     score_path = variant_dir / "scores.json"
     subprocess.run(
         [
-            sys.executable,
+            scorer_python(),
             str(REPO_ROOT / "paper_llm" / "evaluate.py"),
             str(prediction_path),
             "--gold",
@@ -1127,8 +1132,11 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
                     "peft",
                     "accelerate",
                     "sentence-transformers",
-                    "gsapere",
                 )
+            }
+            | {
+                "gsapere": base_result["scores"]["scorer"]["version"],
+                "gsapere_python": scorer_python(),
             },
             "system": {
                 "hostname": socket.gethostname(),

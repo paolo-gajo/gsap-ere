@@ -1,4 +1,5 @@
 .env/
+.eval-env/
 __pycache__/
 *.py[cod]
 paper_llm/.venv/

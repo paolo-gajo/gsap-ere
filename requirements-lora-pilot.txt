@@ -1,8 +1,9 @@
 # Direct runtime dependencies for the Argo H100 pilot.
-# gsapere is installed separately with --no-deps because only its evaluator is used.
+# gsapere is installed with --no-deps in a Python 3.10 .eval-env because only
+# its evaluator is used and its declared Transformers constraint conflicts.
 accelerate==1.14.0
 huggingface_hub==1.18.0
-numpy==2.2.2
+numpy==2.4.2
 peft==0.20.0
 safetensors==0.7.0
 sentence-transformers==6.0.0
