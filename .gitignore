@@ -3,3 +3,4 @@ __pycache__/
 *.py[cod]
 paper_llm/.venv/
 presentation/
+.slurm/
