@@ -62,6 +62,11 @@ RELATION_DEFINITIONS = (
 RELATION_TYPES = tuple(label for label, _ in RELATION_DEFINITIONS)
 RELATION_ORDER = {label: index for index, label in enumerate(RELATION_TYPES)}
 SYMMETRIC_RELATIONS = frozenset({"coreference", "isComparedTo"})
+NER_OUTPUT_FORMATS = ("indices", "inline")
+INLINE_MARKER_RE = re.compile(
+    r"⟦(?:(?P<close>/)(?P<close_id>e[1-9][0-9]*)|"
+    r"(?P<open_id>e[1-9][0-9]*):(?P<label>[A-Za-z][A-Za-z0-9]*))⟧"
+)
 
 CLOSE_PUNCTUATION = {",", ".", ";", ":", "!", "?", "%", ")", "]", "}", "'s"}
 OPEN_PUNCTUATION = {"(", "[", "{"}
@@ -122,8 +127,11 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
-def detokenize(tokens: Iterable[str]) -> str:
+def detokenize_with_spans(
+    tokens: Iterable[str],
+) -> tuple[str, tuple[tuple[int, int], ...]]:
     rendered = ""
+    spans = []
     previous = ""
     before_previous = ""
     quote_is_open = False
@@ -152,10 +160,16 @@ def detokenize(tokens: Iterable[str]) -> str:
             needs_space = True
         if needs_space:
             rendered += " "
+        start = len(rendered)
         rendered += token
+        spans.append((start, len(rendered)))
         before_previous = previous
         previous = token
-    return rendered
+    return rendered, tuple(spans)
+
+
+def detokenize(tokens: Iterable[str]) -> str:
+    return detokenize_with_spans(tokens)[0]
 
 
 def collapse_entities(rows: list[list[Any]], offset: int, token_count: int) -> tuple[Entity, ...]:
@@ -228,6 +242,30 @@ def entity_dict(entity: Entity, record: SentenceRecord) -> dict[str, Any]:
         "type": entity.type,
         "text": " ".join(record.tokens[entity.start : entity.end + 1]),
     }
+
+
+def inline_annotated_sentence(record: SentenceRecord) -> str:
+    text, token_spans = detokenize_with_spans(record.tokens)
+    if "⟦" in text or "⟧" in text:
+        raise RuntimeError(f"sentence {record.key} contains an inline marker character")
+
+    events: dict[int, list[tuple[tuple[int, int, int], str]]] = {}
+    for index, entity in enumerate(record.entities, start=1):
+        start = token_spans[entity.start][0]
+        end = token_spans[entity.end][1]
+        events.setdefault(start, []).append(
+            ((1, -end, index), f"⟦e{index}:{entity.type}⟧")
+        )
+        events.setdefault(end, []).append(
+            ((0, -start, index), f"⟦/e{index}⟧")
+        )
+
+    rendered = []
+    for offset in range(len(text) + 1):
+        rendered.extend(marker for _, marker in sorted(events.get(offset, [])))
+        if offset < len(text):
+            rendered.append(text[offset])
+    return "".join(rendered)
 
 
 def relation_label_map(record: SentenceRecord) -> dict[tuple[int, int, int, int], str]:
@@ -396,6 +434,17 @@ def relation_definitions_text() -> str:
     return "\n".join(definitions)
 
 
+def optional_prompt_sections(full_article: str, examples: str) -> str:
+    sections = []
+    if full_article:
+        sections.append(f"# Full Article Context\n\n{full_article}")
+    if examples:
+        sections.append(f"# Few-Shot Examples\n\n{examples}")
+    if not sections:
+        return ""
+    return "\n" + "\n\n".join(sections) + "\n"
+
+
 def render_template(template: str, replacements: dict[str, str]) -> str:
     rendered = template
     for placeholder, value in replacements.items():
@@ -413,27 +462,44 @@ def build_ner_prompt(
     examples: list[SentenceRecord],
     template: str,
     full_article_context: str = "",
+    output_format: str = "indices",
 ) -> str:
     blocks = []
     for number, example in enumerate(examples, start=1):
-        output = {
-            "entities": [
-                {"start": entity.start, "end": entity.end, "type": entity.type}
-                for entity in example.entities
-            ]
-        }
-        blocks.append(
-            f"## Example {number}\n\n"
-            f"Input: {json.dumps(indexed_tokens(example), ensure_ascii=False)}\n\n"
-            f"Output: {json.dumps(output, ensure_ascii=False)}"
-        )
+        if output_format == "indices":
+            output = {
+                "entities": [
+                    {"start": entity.start, "end": entity.end, "type": entity.type}
+                    for entity in example.entities
+                ]
+            }
+            blocks.append(
+                f"## Example {number}\n\n"
+                f"Input: {json.dumps(indexed_tokens(example), ensure_ascii=False)}\n\n"
+                f"Output: {json.dumps(output, ensure_ascii=False)}"
+            )
+        elif output_format == "inline":
+            blocks.append(
+                f"## Example {number}\n\n"
+                f"Input: {example.text}\n\n"
+                f"Output: {inline_annotated_sentence(example)}"
+            )
+        else:
+            raise ValueError(f"unknown NER output format: {output_format}")
+    examples_text = "\n\n".join(blocks)
+    main_input = (
+        json.dumps(indexed_tokens(target), ensure_ascii=False)
+        if output_format == "indices"
+        else target.text
+    )
     return render_template(
         template,
         {
             "LABEL_DEFINITIONS": entity_definitions_text(),
-            "FULL_ARTICLE_CONTEXT": full_article_context or "N/A",
-            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks) or "N/A",
-            "MAIN_INPUT": json.dumps(indexed_tokens(target), ensure_ascii=False),
+            "OPTIONAL_SECTIONS": optional_prompt_sections(
+                full_article_context, examples_text
+            ),
+            "MAIN_INPUT": main_input,
         },
     )
 
@@ -461,12 +527,14 @@ def build_re_prompt(
             f"Input: {json.dumps(pair_input(example_record, example.subject, example.object), ensure_ascii=False)}\n\n"
             f"Output: {json.dumps({'label': example.label})}"
         )
+    examples_text = "\n\n".join(blocks)
     return render_template(
         template,
         {
             "LABEL_DEFINITIONS": relation_definitions_text(),
-            "FULL_ARTICLE_CONTEXT": full_article_context or "N/A",
-            "FEW_SHOT_EXAMPLES": "\n\n".join(blocks) or "N/A",
+            "OPTIONAL_SECTIONS": optional_prompt_sections(
+                full_article_context, examples_text
+            ),
             "MAIN_INPUT": json.dumps(pair_input(target, subject, object_), ensure_ascii=False),
         },
     )
@@ -532,6 +600,82 @@ def parse_json_content(response: dict[str, Any]) -> tuple[str, Any, str | None]:
         return content, json.loads(content), None
     except json.JSONDecodeError as error:
         return content, None, str(error)
+
+
+def parse_inline_ner(content: str, tokens: tuple[str, ...]) -> tuple[list[Entity], list[str]]:
+    expected_text, token_spans = detokenize_with_spans(tokens)
+    plain_parts = []
+    plain_length = 0
+    source_offset = 0
+    active: dict[str, tuple[int, str]] = {}
+    used_ids: set[str] = set()
+    completed: list[tuple[int, int, str, str]] = []
+    warnings: list[str] = []
+
+    for marker in INLINE_MARKER_RE.finditer(content):
+        chunk = content[source_offset : marker.start()]
+        plain_parts.append(chunk)
+        plain_length += len(chunk)
+        source_offset = marker.end()
+
+        close_id = marker.group("close_id")
+        if close_id is not None:
+            opened = active.pop(close_id, None)
+            if opened is None:
+                warnings.append(f"closing marker for unopened {close_id}; ignored")
+                continue
+            start, label = opened
+            completed.append((start, plain_length, label, close_id))
+            continue
+
+        open_id = marker.group("open_id")
+        if open_id in used_ids:
+            warnings.append(f"duplicate marker id {open_id}; later opening ignored")
+            continue
+        used_ids.add(open_id)
+        active[open_id] = (plain_length, marker.group("label"))
+
+    plain_parts.append(content[source_offset:])
+    plain_text = "".join(plain_parts)
+    if plain_text != expected_text:
+        return [], [
+            "text outside inline markers does not exactly match the input sentence; "
+            "all entities ignored",
+            *warnings,
+        ]
+
+    for marker_id in sorted(active):
+        warnings.append(f"unclosed marker {marker_id}; ignored")
+
+    starts = {start: index for index, (start, _) in enumerate(token_spans)}
+    ends = {end: index for index, (_, end) in enumerate(token_spans)}
+    entities = []
+    seen: set[tuple[int, int]] = set()
+    for char_start, char_end, label, marker_id in sorted(
+        completed,
+        key=lambda row: (
+            row[0],
+            row[1],
+            ENTITY_ORDER.get(row[2], len(ENTITY_ORDER)),
+            row[3],
+        ),
+    ):
+        if label not in ENTITY_ORDER:
+            warnings.append(f"marker {marker_id} has unknown type {label!r}; ignored")
+            continue
+        if char_start not in starts or char_end not in ends:
+            warnings.append(f"marker {marker_id} does not align to token boundaries; ignored")
+            continue
+        start, end = starts[char_start], ends[char_end]
+        if start > end:
+            warnings.append(f"marker {marker_id} is empty or reversed; ignored")
+            continue
+        if (start, end) in seen:
+            warnings.append(f"duplicate span ({start}, {end}); later prediction ignored")
+            continue
+        seen.add((start, end))
+        entities.append(Entity(start, end, label))
+    return entities, warnings
 
 
 def sanitize_ner(payload: Any, token_count: int) -> tuple[list[Entity], list[str]]:
@@ -607,6 +751,7 @@ def ollama_call(
     trace_path: Path,
     trace: dict[str, dict[str, Any]],
     metadata: dict[str, Any],
+    ner_tokens: tuple[str, ...] | None = None,
 ) -> tuple[Any, bool]:
     prompt_hash = sha256_bytes(prompt.encode("utf-8"))
     previous = trace.get(key)
@@ -615,6 +760,8 @@ def ollama_call(
             raise RuntimeError(f"resume prompt changed for {key}; use a fresh output directory")
         if bool(previous.get("think", False)) != args.think:
             raise RuntimeError(f"resume thinking mode changed for {key}; use a fresh output directory")
+        if stage == "ner" and previous.get("ner_output_format", "indices") != args.ner_output_format:
+            raise RuntimeError(f"resume NER output format changed for {key}; use a fresh output directory")
         return previous.get("prediction"), True
 
     num_predict = args.ner_num_predict if stage == "ner" else args.re_num_predict
@@ -622,7 +769,6 @@ def ollama_call(
         "model": args.model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
-        "format": "json",
         "think": args.think,
         "keep_alive": args.keep_alive,
         "options": {
@@ -631,18 +777,37 @@ def ollama_call(
             "num_predict": num_predict,
         },
     }
+    if stage == "re" or args.ner_output_format == "indices":
+        payload["format"] = "json"
     wall_start = time.monotonic()
     response = api_json(args.base_url, "/api/chat", payload=payload, timeout=args.timeout)
     wall_seconds = time.monotonic() - wall_start
-    content, parsed, parse_error = parse_json_content(response)
+    parse_error = None
+    if stage == "ner" and args.ner_output_format == "inline":
+        message = response.get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("content"), str):
+            content = ""
+            prediction = []
+            warnings = ["response has no string message.content"]
+        else:
+            content = message["content"].strip()
+            if ner_tokens is None:
+                raise RuntimeError("inline NER parsing requires the input tokens")
+            prediction, warnings = parse_inline_ner(content, ner_tokens)
+    else:
+        content, parsed, parse_error = parse_json_content(response)
+        if stage == "ner":
+            prediction, warnings = sanitize_ner(parsed, metadata["token_count"])
+        else:
+            prediction, warnings = sanitize_re(parsed)
+
     if stage == "ner":
-        prediction, warnings = sanitize_ner(parsed, metadata["token_count"])
         serialized_prediction: Any = [
             {"start": entity.start, "end": entity.end, "type": entity.type}
             for entity in prediction
         ]
     else:
-        serialized_prediction, warnings = sanitize_re(parsed)
+        serialized_prediction = prediction
     if parse_error:
         warnings.insert(0, f"invalid JSON: {parse_error}")
 
@@ -663,6 +828,8 @@ def ollama_call(
     message = response.get("message")
     if isinstance(message, dict) and isinstance(message.get("thinking"), str):
         event["raw_thinking"] = message["thinking"]
+    if stage == "ner":
+        event["ner_output_format"] = args.ner_output_format
     append_trace(trace_path, event)
     trace[key] = event
     return serialized_prediction, False
@@ -728,7 +895,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-data", type=Path, default=repo_root / "data" / "train.jsonl")
     parser.add_argument("--training-data", type=Path, default=repo_root / "data" / "train.jsonl")
     parser.add_argument("--vocabulary", type=Path, default=repo_root / "vocabulary.json")
-    parser.add_argument("--ner-template", type=Path, default=script_dir / "ner_prompt.md")
+    parser.add_argument(
+        "--ner-output-format",
+        choices=NER_OUTPUT_FORMATS,
+        default="indices",
+        help="have NER predict token indices or mark entities in a copied sentence",
+    )
+    parser.add_argument("--ner-template", type=Path)
     parser.add_argument("--re-template", type=Path, default=script_dir / "re_prompt.md")
     parser.add_argument("--retriever", default=DEFAULT_RETRIEVER)
     parser.add_argument("--retriever-device", default="cpu")
@@ -762,6 +935,13 @@ def parse_args() -> argparse.Namespace:
         )
     if args.resume and args.overwrite:
         parser.error("--resume and --overwrite are mutually exclusive")
+    if args.ner_template is None:
+        template_name = (
+            "ner_prompt.md"
+            if args.ner_output_format == "indices"
+            else "ner_prompt_inline.md"
+        )
+        args.ner_template = script_dir / template_name
     return args
 
 
@@ -841,6 +1021,7 @@ def main() -> None:
             examples,
             ner_template,
             full_article_context=full_article_context,
+            output_format=args.ner_output_format,
         )
         key = f"ner:{target.sentence_id}"
         print(f"[NER {target_index + 1}/{len(targets)}] sentence {target.sentence_id}", flush=True)
@@ -857,6 +1038,7 @@ def main() -> None:
                 "token_count": len(target.tokens),
                 "example_keys": [example.key for example in examples],
             },
+            ner_tokens=target.tokens,
         )
         resumed_calls += int(resumed)
         new_calls += int(not resumed)
@@ -1069,6 +1251,7 @@ def main() -> None:
             "ner_shots": args.ner_shots,
             "re_shots": args.re_shots,
             "retrieval_enabled": not zero_icl,
+            "ner_output_format": args.ner_output_format,
         },
         "unreleased_details_reconstructed": [
             "exact Appendix A.3 NER and RE prompt wording",
@@ -1095,7 +1278,8 @@ def main() -> None:
             "pool_size": 0 if zero_icl else args.retrieval_pool_size,
         },
         "request": {
-            "format": "json",
+            "ner_response_format": args.ner_output_format,
+            "re_response_format": "json",
             "think": args.think,
             "full_article_context": args.full_article_context,
             "temperature": 0.0,

@@ -16,15 +16,7 @@ information extraction task. Extract every qualifying contiguous token span.
 5. Return one JSON object with an `entities` array and no other text. Each item
    must contain integer `start`, integer `end`, and string `type`. Return an
    empty array when the sentence contains no entity.
-
-# Full Article Context
-
-{{FULL_ARTICLE_CONTEXT}}
-
-# Few-Shot Examples
-
-{{FEW_SHOT_EXAMPLES}}
-
+{{OPTIONAL_SECTIONS}}
 # Main Input
 
 Sentence tokens:

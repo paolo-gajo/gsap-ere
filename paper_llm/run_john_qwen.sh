@@ -20,6 +20,11 @@ if [[ "${full_article_context}" != "0" && "${full_article_context}" != "1" ]]; t
   echo "error: FULL_ARTICLE_CONTEXT must be 0 or 1" >&2
   exit 1
 fi
+ner_output_format="${NER_OUTPUT_FORMAT:-indices}"
+if [[ "${ner_output_format}" != "indices" && "${ner_output_format}" != "inline" ]]; then
+  echo "error: NER_OUTPUT_FORMAT must be indices or inline" >&2
+  exit 1
+fi
 re_shots="${RE_SHOTS:-1}"
 if [[ "${re_shots}" != "1" && "${re_shots}" != "5" && "${re_shots}" != "10" ]]; then
   echo "error: RE_SHOTS must be 1, 5, or 10" >&2
@@ -53,7 +58,12 @@ else
   context_suffix=""
   context_args=()
 fi
-default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john${mode_suffix}${icl_suffix}${context_suffix}-00016_2106_09462"
+if [[ "${ner_output_format}" == "inline" ]]; then
+  ner_format_suffix="-ner-inline"
+else
+  ner_format_suffix=""
+fi
+default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john${mode_suffix}${icl_suffix}${context_suffix}${ner_format_suffix}-00016_2106_09462"
 result_dir="${RESULT_DIR:-${default_result_dir}}"
 ner_num_predict="${NER_NUM_PREDICT:-${default_ner_num_predict}}"
 re_num_predict="${RE_NUM_PREDICT:-${default_re_num_predict}}"
@@ -159,6 +169,7 @@ fi
   --model "${model}" \
   --base-url "${base_url}" \
   --output-dir "${result_dir}" \
+  --ner-output-format "${ner_output_format}" \
   --ner-num-predict "${ner_num_predict}" \
   --re-num-predict "${re_num_predict}" \
   "${think_args[@]}" \
