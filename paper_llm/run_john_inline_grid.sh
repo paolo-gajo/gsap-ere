@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 runner="${script_dir}/run_john_qwen.sh"
 unset RESULT_DIR
+overwrite="${OVERWRITE:-0}"
 
 run_case() {
   local zero_icl="$1"
@@ -16,7 +17,7 @@ run_case() {
     RE_SHOTS="${re_shots}" \
     FULL_ARTICLE_CONTEXT="${full_article_context}" \
     THINK="${think}" \
-    OVERWRITE=0 \
+    OVERWRITE="${overwrite}" \
     bash "${runner}"
 }
 

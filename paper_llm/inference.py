@@ -64,8 +64,8 @@ RELATION_ORDER = {label: index for index, label in enumerate(RELATION_TYPES)}
 SYMMETRIC_RELATIONS = frozenset({"coreference", "isComparedTo"})
 NER_OUTPUT_FORMATS = ("indices", "inline")
 INLINE_MARKER_RE = re.compile(
-    r"⟦(?:(?P<close>/)(?P<close_id>e[1-9][0-9]*)|"
-    r"(?P<open_id>e[1-9][0-9]*):(?P<label>[A-Za-z][A-Za-z0-9]*))⟧"
+    r"\[\[(?:(?P<close>/)(?P<close_id>e[1-9][0-9]*)|"
+    r"(?P<open_id>e[1-9][0-9]*):(?P<label>[A-Za-z][A-Za-z0-9]*))\]\]"
 )
 
 CLOSE_PUNCTUATION = {",", ".", ";", ":", "!", "?", "%", ")", "]", "}", "'s"}
@@ -246,18 +246,18 @@ def entity_dict(entity: Entity, record: SentenceRecord) -> dict[str, Any]:
 
 def inline_annotated_sentence(record: SentenceRecord) -> str:
     text, token_spans = detokenize_with_spans(record.tokens)
-    if "⟦" in text or "⟧" in text:
-        raise RuntimeError(f"sentence {record.key} contains an inline marker character")
+    if "[[" in text or "]]" in text:
+        raise RuntimeError(f"sentence {record.key} contains an inline marker delimiter")
 
     events: dict[int, list[tuple[tuple[int, int, int], str]]] = {}
     for index, entity in enumerate(record.entities, start=1):
         start = token_spans[entity.start][0]
         end = token_spans[entity.end][1]
         events.setdefault(start, []).append(
-            ((1, -end, index), f"⟦e{index}:{entity.type}⟧")
+            ((1, -end, index), f"[[e{index}:{entity.type}]]")
         )
         events.setdefault(end, []).append(
-            ((0, -start, index), f"⟦/e{index}⟧")
+            ((0, -start, index), f"[[/e{index}]]")
         )
 
     rendered = []

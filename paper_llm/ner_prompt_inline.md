@@ -12,7 +12,7 @@ information extraction task. Extract every qualifying contiguous text span.
 1. Read the complete sentence.
 2. Find every explicit named or generic GSAP-ERE entity mention.
 3. Copy the sentence exactly and enclose each entity with paired markers.
-4. Start an entity with `⟦ID:TYPE⟧` and end it with `⟦/ID⟧`. Use a unique
+4. Start an entity with `[[ID:TYPE]]` and end it with `[[/ID]]`. Use a unique
    identifier such as `e1` for each entity. Identifiers are not text positions.
 5. Put markers directly against the first and last character of the entity. Do
    not change, delete, reorder, or add any text outside the markers.
