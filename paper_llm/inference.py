@@ -605,7 +605,7 @@ def parse_json_content(response: dict[str, Any]) -> tuple[str, Any, str | None]:
 def parse_inline_ner(content: str, tokens: tuple[str, ...]) -> tuple[list[Entity], list[str]]:
     expected_text, token_spans = detokenize_with_spans(tokens)
     plain_parts = []
-    plain_length = 0
+    plain_offset = 0
     source_offset = 0
     active: dict[str, tuple[int, str]] = {}
     used_ids: set[str] = set()
@@ -615,7 +615,7 @@ def parse_inline_ner(content: str, tokens: tuple[str, ...]) -> tuple[list[Entity
     for marker in INLINE_MARKER_RE.finditer(content):
         chunk = content[source_offset : marker.start()]
         plain_parts.append(chunk)
-        plain_length += len(chunk)
+        plain_offset += sum(not character.isspace() for character in chunk)
         source_offset = marker.end()
 
         close_id = marker.group("close_id")
@@ -625,7 +625,7 @@ def parse_inline_ner(content: str, tokens: tuple[str, ...]) -> tuple[list[Entity
                 warnings.append(f"closing marker for unopened {close_id}; ignored")
                 continue
             start, label = opened
-            completed.append((start, plain_length, label, close_id))
+            completed.append((start, plain_offset, label, close_id))
             continue
 
         open_id = marker.group("open_id")
@@ -633,22 +633,33 @@ def parse_inline_ner(content: str, tokens: tuple[str, ...]) -> tuple[list[Entity
             warnings.append(f"duplicate marker id {open_id}; later opening ignored")
             continue
         used_ids.add(open_id)
-        active[open_id] = (plain_length, marker.group("label"))
+        active[open_id] = (plain_offset, marker.group("label"))
 
     plain_parts.append(content[source_offset:])
     plain_text = "".join(plain_parts)
-    if plain_text != expected_text:
+    compact_plain = "".join(character for character in plain_text if not character.isspace())
+    compact_expected = "".join(
+        character for character in expected_text if not character.isspace()
+    )
+    if compact_plain != compact_expected:
         return [], [
-            "text outside inline markers does not exactly match the input sentence; "
-            "all entities ignored",
+            "text outside inline markers differs from the input sentence beyond "
+            "whitespace; all entities ignored",
             *warnings,
         ]
 
     for marker_id in sorted(active):
         warnings.append(f"unclosed marker {marker_id}; ignored")
 
-    starts = {start: index for index, (start, _) in enumerate(token_spans)}
-    ends = {end: index for index, (_, end) in enumerate(token_spans)}
+    compact_offsets = [0]
+    for character in expected_text:
+        compact_offsets.append(compact_offsets[-1] + int(not character.isspace()))
+    starts = {
+        compact_offsets[start]: index for index, (start, _) in enumerate(token_spans)
+    }
+    ends = {
+        compact_offsets[end]: index for index, (_, end) in enumerate(token_spans)
+    }
     entities = []
     seen: set[tuple[int, int]] = set()
     for char_start, char_end, label, marker_id in sorted(
