@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the fixed Qwen3.8-27B GSAP-ERE LoRA pilot."""
+"""Run the fixed Qwen3.8-27B GSAP-ERE LoRA experiments."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import random
+import shutil
 import socket
 import subprocess
 import sys
@@ -51,13 +52,23 @@ RETRIEVER_REVISION = "d51b22a1dfa8184e9258074e56e2875e50612dca"
 TARGET_DOCUMENT_ID = DEFAULT_DOCUMENT_ID
 
 DEFAULT_SEED = 42
-NER_STEPS = 100
-RE_POSITIVE_STEPS = 50
-RE_NIL_STEPS = 50
-RE_STEPS = RE_POSITIVE_STEPS + RE_NIL_STEPS
+PILOT_REGIME = "pilot"
+FULL_PASS_REGIME = "full-pass"
+TRAINING_REGIMES = (PILOT_REGIME, FULL_PASS_REGIME)
+NER_SAMPLE_COUNT = 100
+RE_POSITIVE_SAMPLE_COUNT = 50
+RE_NIL_SAMPLE_COUNT = 50
+RE_SAMPLE_COUNT = RE_POSITIVE_SAMPLE_COUNT + RE_NIL_SAMPLE_COUNT
+NER_STEPS = 200
+RE_STEPS = 200
 TOTAL_STEPS = NER_STEPS + RE_STEPS
 
 LEARNING_RATE = 2e-4
+MICRO_BATCH_SIZE = 8
+GRADIENT_ACCUMULATION_STEPS = 1
+WARMUP_STEPS = 5
+WEIGHT_DECAY = 0.01
+CHECKPOINT_INTERVAL = 1000
 LORA_R = 16
 LORA_ALPHA = 16
 MAX_TRAIN_TOKENS = 4096
@@ -84,11 +95,19 @@ class PilotExample:
 
 @dataclass(frozen=True)
 class PreparedExample:
-    optimizer_step: int
+    sample_index: int
     task: str
+    stratum: str
     record_key: str
-    prompt: str
-    completion: str
+    source: PilotExample
+
+
+@dataclass(frozen=True)
+class TrainingBatch:
+    optimizer_step: int
+    task_step: int
+    task: str
+    rows: tuple[PreparedExample, ...]
 
 
 def utc_now() -> str:
@@ -120,6 +139,18 @@ def package_version(name: str) -> str | None:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
         return None
+
+
+def qlora_signature() -> dict[str, Any]:
+    return {
+        "model_revision": MODEL_REVISION,
+        "backend": "bitsandbytes",
+        "bitsandbytes_version": package_version("bitsandbytes"),
+        "bits": 4,
+        "quant_type": "nf4",
+        "compute_dtype": "bfloat16",
+        "double_quant": True,
+    }
 
 
 def scorer_python() -> str:
@@ -183,7 +214,7 @@ def _sorted_pairs(pairs: Iterable[PairExample]) -> list[PairExample]:
 def sample_pilot_examples(
     eligible: list[SentenceRecord], seed: int
 ) -> list[PilotExample]:
-    if len(eligible) < NER_STEPS:
+    if len(eligible) < NER_SAMPLE_COUNT:
         raise RuntimeError("not enough eligible sentences for NER sampling")
 
     ner_rng = random.Random(f"{seed}:ner")
@@ -191,7 +222,7 @@ def sample_pilot_examples(
     nil_rng = random.Random(f"{seed}:re-nil")
     order_rng = random.Random(f"{seed}:order")
 
-    ner_indices = ner_rng.sample(range(len(eligible)), NER_STEPS)
+    ner_indices = ner_rng.sample(range(len(eligible)), NER_SAMPLE_COUNT)
     pair_examples, _ = build_pair_examples(eligible)
     positive_by_record: dict[int, list[PairExample]] = defaultdict(list)
     nil_by_record: dict[int, list[PairExample]] = defaultdict(list)
@@ -199,16 +230,16 @@ def sample_pilot_examples(
         destination = nil_by_record if pair.label == "NIL" else positive_by_record
         destination[pair.record_index].append(pair)
 
-    if len(positive_by_record) < RE_POSITIVE_STEPS:
+    if len(positive_by_record) < RE_POSITIVE_SAMPLE_COUNT:
         raise RuntimeError("not enough distinct positive RE sentences")
     positive_record_indices = positive_rng.sample(
-        sorted(positive_by_record), RE_POSITIVE_STEPS
+        sorted(positive_by_record), RE_POSITIVE_SAMPLE_COUNT
     )
     positive_record_set = set(positive_record_indices)
     nil_candidates = sorted(set(nil_by_record) - positive_record_set)
-    if len(nil_candidates) < RE_NIL_STEPS:
+    if len(nil_candidates) < RE_NIL_SAMPLE_COUNT:
         raise RuntimeError("not enough distinct NIL RE sentences after positive sampling")
-    nil_record_indices = nil_rng.sample(nil_candidates, RE_NIL_STEPS)
+    nil_record_indices = nil_rng.sample(nil_candidates, RE_NIL_SAMPLE_COUNT)
 
     examples = [PilotExample("ner", index) for index in ner_indices]
     for index in positive_record_indices:
@@ -228,17 +259,60 @@ def sample_pilot_examples(
     re_record_indices = [
         example.record_index for example in examples if example.task == "re"
     ]
-    if task_counts != {"ner": NER_STEPS, "re": RE_STEPS}:
+    if task_counts != {"ner": NER_SAMPLE_COUNT, "re": RE_SAMPLE_COUNT}:
         raise AssertionError(f"unexpected task counts: {task_counts}")
-    if re_labels != {"positive": RE_POSITIVE_STEPS, "NIL": RE_NIL_STEPS}:
+    if re_labels != {
+        "positive": RE_POSITIVE_SAMPLE_COUNT,
+        "NIL": RE_NIL_SAMPLE_COUNT,
+    }:
         raise AssertionError(f"unexpected RE balance: {re_labels}")
-    if len(set(ner_indices)) != NER_STEPS:
+    if len(set(ner_indices)) != NER_SAMPLE_COUNT:
         raise AssertionError("NER source sentences are not unique")
-    if len(set(re_record_indices)) != RE_STEPS:
+    if len(set(re_record_indices)) != RE_SAMPLE_COUNT:
         raise AssertionError("RE source sentences are not unique")
     if any(eligible[example.record_index].doc_id == TARGET_DOCUMENT_ID for example in examples):
         raise AssertionError("target document leaked into sampled training examples")
     return examples
+
+
+def full_pass_examples(
+    eligible: list[SentenceRecord], seed: int
+) -> list[PilotExample]:
+    pair_examples, _ = build_pair_examples(eligible)
+    examples = [PilotExample("ner", index) for index in range(len(eligible))]
+    examples.extend(
+        PilotExample("re", pair.record_index, pair) for pair in pair_examples
+    )
+    random.Random(f"{seed}:full-pass-order").shuffle(examples)
+    if Counter(example.task for example in examples) != {
+        "ner": len(eligible),
+        "re": len(pair_examples),
+    }:
+        raise AssertionError("wrong full-pass task counts")
+    if any(
+        eligible[example.record_index].doc_id == TARGET_DOCUMENT_ID
+        for example in examples
+    ):
+        raise AssertionError("target document leaked into full-pass training examples")
+    return examples
+
+
+def select_training_examples(
+    eligible: list[SentenceRecord], seed: int, regime: str
+) -> list[PilotExample]:
+    if regime == PILOT_REGIME:
+        return sample_pilot_examples(eligible, seed)
+    if regime == FULL_PASS_REGIME:
+        return full_pass_examples(eligible, seed)
+    raise ValueError(f"unknown training regime: {regime}")
+
+
+def example_stratum(example: PilotExample) -> str:
+    if example.task == "ner":
+        return "ner"
+    if example.task == "re" and example.pair is not None:
+        return "nil" if example.pair.label == "NIL" else "positive"
+    raise AssertionError(f"invalid training example: {example}")
 
 
 def gold_completion(example: PilotExample, eligible: list[SentenceRecord]) -> str:
@@ -282,74 +356,85 @@ def prepare_training_material(
     eligible: list[SentenceRecord],
     output_dir: Path,
     seed: int,
+    regime: str,
 ) -> list[PreparedExample]:
     ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
     re_template = RE_TEMPLATE.read_text(encoding="utf-8")
     prepared: list[PreparedExample] = []
-    sample_rows = []
+    task_counts: Counter[str] = Counter()
+    stratum_counts: Counter[str] = Counter()
     training_path = output_dir / "training_records.jsonl"
-    for optimizer_step, example in enumerate(examples, start=1):
-        record = eligible[example.record_index]
-        prompt = training_prompt(example, eligible, ner_template, re_template)
-        completion = gold_completion(example, eligible)
-        json.loads(completion)
-        item = PreparedExample(
-            optimizer_step=optimizer_step,
-            task=example.task,
-            record_key=record.key,
-            prompt=prompt,
-            completion=completion,
-        )
-        prepared.append(item)
-        sample_row: dict[str, Any] = {
-            "optimizer_step": optimizer_step,
-            "task": example.task,
-            "document_id": record.doc_id,
-            "sentence_id": record.sentence_id,
-            "record_key": record.key,
-            "prompt_sha256": sha256_text(prompt),
-            "completion": json.loads(completion),
-        }
-        if example.pair is not None:
-            sample_row.update(
-                {
-                    "subject": entity_dict(example.pair.subject, record),
-                    "object": entity_dict(example.pair.object, record),
-                    "label": example.pair.label,
-                }
+    with training_path.open("w", encoding="utf-8") as stream:
+        for sample_index, example in enumerate(examples, start=1):
+            record = eligible[example.record_index]
+            if record.doc_id == TARGET_DOCUMENT_ID:
+                raise AssertionError("target document leaked into training material")
+            prompt = training_prompt(example, eligible, ner_template, re_template)
+            completion = gold_completion(example, eligible)
+            parsed_completion = json.loads(completion)
+            stratum = example_stratum(example)
+            item = PreparedExample(
+                sample_index=sample_index,
+                task=example.task,
+                stratum=stratum,
+                record_key=record.key,
+                source=example,
             )
-        sample_rows.append(sample_row)
-        append_jsonl(
-            training_path,
-            {
-                "optimizer_step": optimizer_step,
+            prepared.append(item)
+            task_counts[example.task] += 1
+            stratum_counts[stratum] += 1
+            row: dict[str, Any] = {
+                "sample_index": sample_index,
                 "task": example.task,
+                "stratum": stratum,
+                "document_id": record.doc_id,
+                "sentence_id": record.sentence_id,
                 "record_key": record.key,
-                "prompt": prompt,
-                "completion": completion,
-            },
-        )
+                "prompt_sha256": sha256_text(prompt),
+                "completion": parsed_completion,
+            }
+            if example.pair is not None:
+                row.update(
+                    {
+                        "subject": entity_dict(example.pair.subject, record),
+                        "object": entity_dict(example.pair.object, record),
+                        "label": example.pair.label,
+                    }
+                )
+            stream.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
 
-    if any(row["document_id"] == TARGET_DOCUMENT_ID for row in sample_rows):
-        raise AssertionError("target document leaked into the sample manifest")
     write_json(
         output_dir / "sample_manifest.json",
         {
             "schema_version": 1,
             "seed": seed,
+            "training_regime": regime,
             "excluded_document_id": TARGET_DOCUMENT_ID,
-            "sampling": {
-                "ner": "100 distinct uniformly sampled eligible sentences",
-                "re_positive": "50 distinct sentences with one uniformly sampled positive ordered pair",
-                "re_nil": "50 further distinct sentences with one uniformly sampled NIL ordered pair",
-                "task_order": "deterministically shuffled",
-            },
+            "selection": (
+                {
+                    "ner": "100 distinct uniformly sampled eligible sentences",
+                    "re_positive": "50 distinct sentences with one uniformly sampled positive ordered pair",
+                    "re_nil": "50 further distinct sentences with one uniformly sampled NIL ordered pair",
+                    "sample_order": "deterministically shuffled",
+                }
+                if regime == PILOT_REGIME
+                else {
+                    "ner": "every eligible stored sentence exactly once, including empty-entity sentences",
+                    "re": "every ordered pair of distinct gold entities exactly once",
+                    "nil": "ordered pairs without an annotated relation are labeled NIL",
+                    "sample_order": "deterministically shuffled",
+                }
+            ),
             "counts": {
-                "optimizer_steps": len(prepared),
-                "ner": sum(item.task == "ner" for item in prepared),
-                "re": sum(item.task == "re" for item in prepared),
-                "re_positive": sum(row.get("label") not in {None, "NIL"} for row in sample_rows),
-                "re_nil": sum(row.get("label") == "NIL" for row in sample_rows),
+                "unique_training_records": len(prepared),
+                "ner": task_counts["ner"],
+                "re": task_counts["re"],
+                "re_positive": stratum_counts["positive"],
+                "re_nil": stratum_counts["nil"],
+                "eligible_sentences": len(eligible),
+                "eligible_documents": len({record.doc_id for record in eligible}),
             },
             "inputs": {
                 "train_data": str(TRAIN_DATA),
@@ -361,7 +446,7 @@ def prepare_training_material(
                 "re_template": str(RE_TEMPLATE),
                 "re_template_sha256": sha256_file(RE_TEMPLATE),
             },
-            "examples": sample_rows,
+            "record_manifest": "training_records.jsonl",
         },
     )
     return prepared
@@ -376,10 +461,18 @@ def chat_prompt(tokenizer: Any, prompt: str) -> str:
     )
 
 
-def encode_training_example(tokenizer: Any, example: PreparedExample) -> dict[str, Any]:
-    rendered_prompt = chat_prompt(tokenizer, example.prompt)
+def encode_training_example(
+    tokenizer: Any,
+    example: PreparedExample,
+    eligible: list[SentenceRecord],
+    ner_template: str,
+    re_template: str,
+) -> dict[str, Any]:
+    prompt = training_prompt(example.source, eligible, ner_template, re_template)
+    completion = gold_completion(example.source, eligible)
+    rendered_prompt = chat_prompt(tokenizer, prompt)
     prompt_ids = tokenizer.encode(rendered_prompt, add_special_tokens=False)
-    completion_ids = tokenizer.encode(example.completion, add_special_tokens=False)
+    completion_ids = tokenizer.encode(completion, add_special_tokens=False)
     eos_token_id = tokenizer.eos_token_id
     if eos_token_id is None:
         raise RuntimeError("tokenizer has no EOS token")
@@ -388,12 +481,13 @@ def encode_training_example(tokenizer: Any, example: PreparedExample) -> dict[st
     input_ids = prompt_ids + completion_ids
     if len(input_ids) > MAX_TRAIN_TOKENS:
         raise RuntimeError(
-            f"training record {example.optimizer_step} has {len(input_ids)} tokens; "
+            f"training record {example.sample_index} has {len(input_ids)} tokens; "
             f"limit is {MAX_TRAIN_TOKENS} and truncation is forbidden"
         )
     return {
-        "optimizer_step": example.optimizer_step,
+        "sample_index": example.sample_index,
         "task": example.task,
+        "stratum": example.stratum,
         "record_key": example.record_key,
         "input_ids": input_ids,
         "attention_mask": [1] * len(input_ids),
@@ -452,11 +546,19 @@ def require_h100(torch: Any) -> dict[str, Any]:
 
 def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
     try:
+        import bitsandbytes as bnb
         import torch
-        from peft import LoraConfig, TaskType, get_peft_model
-        from transformers import AutoTokenizer, Qwen3_5ForCausalLM
+        from peft import (
+            LoraConfig,
+            TaskType,
+            get_peft_model,
+            prepare_model_for_kbit_training,
+        )
+        from transformers import AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForCausalLM
     except ImportError as error:
-        raise RuntimeError("torch, transformers, and peft are required for the full pilot") from error
+        raise RuntimeError(
+            "torch, transformers, peft, and bitsandbytes are required"
+        ) from error
 
     gpu = require_h100(torch)
     random.seed(seed)
@@ -473,15 +575,27 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True,
+    )
     model = Qwen3_5ForCausalLM.from_pretrained(
         MODEL_ID,
         revision=MODEL_REVISION,
         dtype=torch.bfloat16,
+        quantization_config=quantization_config,
+        device_map={"": 0},
         low_cpu_mem_usage=True,
         trust_remote_code=False,
     )
-    model.to(torch.device("cuda", 0))
     model.config.use_cache = False
+    model = prepare_model_for_kbit_training(
+        model,
+        use_gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+    )
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         inference_mode=False,
@@ -492,15 +606,30 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
         bias="none",
     )
     model = get_peft_model(model, lora_config, revision=MODEL_REVISION)
-    model.gradient_checkpointing_enable(
-        gradient_checkpointing_kwargs={"use_reentrant": False}
+
+    if not getattr(model, "is_loaded_in_4bit", False):
+        raise RuntimeError("model did not load in bitsandbytes 4-bit mode")
+    device_map = getattr(model, "hf_device_map", None)
+    if not isinstance(device_map, dict) or any(
+        str(device).lower() in {"cpu", "disk"} for device in device_map.values()
+    ):
+        raise RuntimeError(f"unexpected quantized-model device map: {device_map!r}")
+    quantized_module_count = sum(
+        isinstance(module, bnb.nn.Linear4bit) for module in model.modules()
     )
+    if not quantized_module_count:
+        raise RuntimeError("bitsandbytes resolved zero Linear4bit modules")
 
     targeted_modules = sorted(
         name
         for name, module in model.named_modules()
         if hasattr(module, "lora_A") and getattr(module, "lora_A")
     )
+    if len(targeted_modules) != quantized_module_count:
+        raise RuntimeError(
+            "not every bitsandbytes Linear4bit module received a LoRA adapter: "
+            f"{len(targeted_modules)} adapters for {quantized_module_count} modules"
+        )
     trainable = [(name, parameter) for name, parameter in model.named_parameters() if parameter.requires_grad]
     if not targeted_modules:
         raise RuntimeError("PEFT resolved zero LoRA target modules")
@@ -509,50 +638,494 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
     unexpected = [name for name, _ in trainable if "lora_" not in name]
     if unexpected:
         raise RuntimeError(f"non-LoRA parameters are trainable: {unexpected[:10]}")
-    total_parameters = sum(parameter.numel() for parameter in model.parameters())
-    trainable_parameters = sum(parameter.numel() for _, parameter in trainable)
+    if any(not parameter.is_floating_point() for _, parameter in trainable):
+        raise RuntimeError("a trainable LoRA parameter is not floating point")
+    if any(parameter.device.type != "cuda" or parameter.device.index != 0 for _, parameter in trainable):
+        raise RuntimeError("trainable LoRA parameters are not all on cuda:0")
+    trainable_parameters, total_parameters = model.get_nb_trainable_parameters()
+    trainable_dtypes: dict[str, int] = {}
+    for _, parameter in trainable:
+        dtype = str(parameter.dtype)
+        trainable_dtypes[dtype] = trainable_dtypes.get(dtype, 0) + parameter.numel()
+    if set(trainable_dtypes) != {"torch.float32"}:
+        raise RuntimeError(f"unexpected LoRA parameter dtypes: {trainable_dtypes}")
+    frozen_storage_dtypes: dict[str, int] = {}
+    for parameter in model.parameters():
+        if parameter.requires_grad:
+            continue
+        dtype = str(parameter.dtype)
+        frozen_storage_dtypes[dtype] = (
+            frozen_storage_dtypes.get(dtype, 0) + parameter.numel()
+        )
     target_report = {
         "selector": "all-linear",
-        "peft_semantics": "all Linear/Transformers Conv1D modules except the output head",
+        "peft_semantics": "all supported linear modules, including bitsandbytes Linear4bit, except the output head",
         "module_count": len(targeted_modules),
         "module_names": targeted_modules,
         "trainable_parameter_count": trainable_parameters,
         "total_parameter_count": total_parameters,
         "trainable_percent": 100.0 * trainable_parameters / total_parameters,
         "trainable_parameter_names": [name for name, _ in trainable],
+        "quantization": {
+            "backend": "bitsandbytes",
+            "load_in_4bit": True,
+            "quant_type": "nf4",
+            "compute_dtype": "bfloat16",
+            "double_quant": True,
+            "device_map": device_map,
+            "linear4bit_module_count": quantized_module_count,
+            "trainable_parameter_dtypes": trainable_dtypes,
+            "frozen_parameter_storage_numel_by_dtype": frozen_storage_dtypes,
+        },
         "gpu": gpu,
     }
     return torch, tokenizer, model, target_report
 
 
-def tensor_batch(torch: Any, row: dict[str, Any], device: Any) -> dict[str, Any]:
-    return {
-        "input_ids": torch.tensor([row["input_ids"]], dtype=torch.long, device=device),
-        "attention_mask": torch.tensor(
-            [row["attention_mask"]], dtype=torch.long, device=device
-        ),
-        "labels": torch.tensor([row["labels"]], dtype=torch.long, device=device),
+def build_training_schedule(
+    prepared: list[PreparedExample], seed: int, regime: str = PILOT_REGIME
+) -> list[TrainingBatch]:
+    pools = {
+        task: [row for row in prepared if row.task == task]
+        for task in ("ner", "re")
     }
+    pool_sizes = {task: len(rows) for task, rows in pools.items()}
+    if not all(pool_sizes.values()):
+        raise AssertionError(f"empty task pool: {pool_sizes}")
+
+    task_batches: dict[str, list[tuple[PreparedExample, ...]]] = {}
+    if regime == PILOT_REGIME:
+        if pool_sizes != {"ner": NER_SAMPLE_COUNT, "re": RE_SAMPLE_COUNT}:
+            raise AssertionError(f"wrong pilot task pools: {pool_sizes}")
+        for task, step_count in (("ner", NER_STEPS), ("re", RE_STEPS)):
+            pool = list(pools[task])
+            random.Random(f"{seed}:training-stream:{task}").shuffle(pool)
+            presentations = step_count * MICRO_BATCH_SIZE
+            if presentations % len(pool):
+                raise AssertionError(f"{task} presentations do not evenly cover its pool")
+            stream = pool * (presentations // len(pool))
+            task_batches[task] = [
+                tuple(stream[offset : offset + MICRO_BATCH_SIZE])
+                for offset in range(0, len(stream), MICRO_BATCH_SIZE)
+            ]
+    elif regime == FULL_PASS_REGIME:
+        for task, pool in pools.items():
+            shuffled = list(pool)
+            random.Random(f"{seed}:training-stream:{task}").shuffle(shuffled)
+            usable = len(shuffled) - len(shuffled) % MICRO_BATCH_SIZE
+            task_batches[task] = [
+                tuple(shuffled[offset : offset + MICRO_BATCH_SIZE])
+                for offset in range(0, usable, MICRO_BATCH_SIZE)
+            ]
+    else:
+        raise ValueError(f"unknown training regime: {regime}")
+
+    task_limits = {task: len(batches) for task, batches in task_batches.items()}
+
+    schedule: list[TrainingBatch] = []
+    task_counts: Counter[str] = Counter()
+    if regime == PILOT_REGIME:
+        task_order = [
+            task
+            for pair_index in range(max(task_limits.values()))
+            for task in (("ner", "re") if pair_index % 2 == 0 else ("re", "ner"))
+            if pair_index < task_limits[task]
+        ]
+    else:
+        task_order = []
+        total_steps = sum(task_limits.values())
+        while len(task_order) < total_steps:
+            prefix_size = len(task_order) + 1
+            remaining = [
+                task
+                for task in ("ner", "re")
+                if task_counts[task] < task_limits[task]
+            ]
+            task = max(
+                remaining,
+                key=lambda name: (
+                    prefix_size * task_limits[name] / total_steps
+                    - task_counts[name],
+                    name == "ner",
+                ),
+            )
+            task_order.append(task)
+            task_counts[task] += 1
+        task_counts.clear()
+
+    for task in task_order:
+        task_counts[task] += 1
+        task_step = task_counts[task]
+        rows = task_batches[task][task_step - 1]
+        if not 1 <= len(rows) <= MICRO_BATCH_SIZE:
+            raise AssertionError(f"invalid batch size {len(rows)}")
+        sample_indices = [row.sample_index for row in rows]
+        if len(sample_indices) != len(set(sample_indices)):
+            raise AssertionError("a scheduled batch repeats a training record")
+        if {row.task for row in rows} != {task}:
+            raise AssertionError("a scheduled batch mixes tasks")
+        schedule.append(
+            TrainingBatch(
+                optimizer_step=len(schedule) + 1,
+                task_step=task_step,
+                task=task,
+                rows=rows,
+            )
+        )
+
+    if len(schedule) != sum(task_limits.values()):
+        raise AssertionError("wrong total scheduled optimizer steps")
+    if dict(task_counts) != task_limits:
+        raise AssertionError(f"wrong scheduled task counts: {task_counts}")
+    sample_presentations = Counter(
+        row.sample_index for batch in schedule for row in batch.rows
+    )
+    expected_repetitions = 16 if regime == PILOT_REGIME else 1
+    prepared_ids = {row.sample_index for row in prepared}
+    scheduled_ids = set(sample_presentations)
+    dropped_ids = prepared_ids - scheduled_ids
+    if scheduled_ids - prepared_ids:
+        raise AssertionError("schedule contains records outside the manifest")
+    expected_dropped = 0 if regime == PILOT_REGIME else sum(
+        len(pool) % MICRO_BATCH_SIZE for pool in pools.values()
+    )
+    if len(dropped_ids) != expected_dropped:
+        raise AssertionError(f"wrong dropped-record count: {len(dropped_ids)}")
+    if set(sample_presentations.values()) != {expected_repetitions}:
+        raise AssertionError("training records do not have equal presentation counts")
+    return schedule
+
+
+def padded_training_rows(
+    rows: Sequence[dict[str, Any]], pad_token_id: int
+) -> dict[str, list[list[int]]]:
+    if not 1 <= len(rows) <= MICRO_BATCH_SIZE:
+        raise AssertionError(
+            f"expected a micro-batch of 1 through {MICRO_BATCH_SIZE}, found {len(rows)}"
+        )
+    if any(
+        not (
+            len(row["input_ids"])
+            == len(row["attention_mask"])
+            == len(row["labels"])
+        )
+        for row in rows
+    ):
+        raise AssertionError("training row tensors have inconsistent lengths")
+    if any(not any(label != -100 for label in row["labels"]) for row in rows):
+        raise AssertionError("training row has no supervised completion tokens")
+    maximum = max(len(row["input_ids"]) for row in rows)
+
+    def right_pad(values: list[int], fill: int) -> list[int]:
+        return values + [fill] * (maximum - len(values))
+
+    return {
+        "input_ids": [right_pad(row["input_ids"], pad_token_id) for row in rows],
+        "attention_mask": [right_pad(row["attention_mask"], 0) for row in rows],
+        "labels": [right_pad(row["labels"], -100) for row in rows],
+    }
+
+
+def tensor_batch(
+    torch: Any,
+    rows: Sequence[dict[str, Any]],
+    device: Any,
+    pad_token_id: int,
+) -> dict[str, Any]:
+    padded = padded_training_rows(rows, pad_token_id)
+    return {
+        name: torch.tensor(values, dtype=torch.long, device=device)
+        for name, values in padded.items()
+    }
+
+
+def encode_training_batch(
+    tokenizer: Any,
+    batch: TrainingBatch,
+    eligible: list[SentenceRecord],
+    ner_template: str,
+    re_template: str,
+) -> list[dict[str, Any]]:
+    return [
+        encode_training_example(
+            tokenizer, row, eligible, ner_template, re_template
+        )
+        for row in batch.rows
+    ]
+
+
+def preflight_training_schedule(
+    tokenizer: Any,
+    schedule: list[TrainingBatch],
+    eligible: list[SentenceRecord],
+    output_dir: Path,
+    ner_template: str,
+    re_template: str,
+) -> TrainingBatch:
+    seen: set[int] = set()
+    token_lengths: list[int] = []
+    widest: TrainingBatch | None = None
+    widest_shape = (-1, -1, -1)
+    schedule_path = output_dir / "training_schedule.jsonl"
+    tokenization_path = output_dir / "tokenization_records.jsonl"
+    with schedule_path.open("w", encoding="utf-8") as schedule_stream, tokenization_path.open(
+        "w", encoding="utf-8"
+    ) as tokenization_stream:
+        for batch in schedule:
+            encoded = encode_training_batch(
+                tokenizer, batch, eligible, ner_template, re_template
+            )
+            lengths = [len(row["input_ids"]) for row in encoded]
+            padded_tokens = max(lengths)
+            shape = (
+                len(encoded) * padded_tokens * padded_tokens,
+                len(encoded) * padded_tokens,
+                padded_tokens,
+            )
+            if shape > widest_shape:
+                widest = batch
+                widest_shape = shape
+            schedule_stream.write(
+                json.dumps(
+                    {
+                        "optimizer_step": batch.optimizer_step,
+                        "task_step": batch.task_step,
+                        "task": batch.task,
+                        "batch_size": len(batch.rows),
+                        "sample_indices": [row.sample_index for row in batch.rows],
+                        "record_keys": [row.record_key for row in batch.rows],
+                        "strata": dict(Counter(row.stratum for row in batch.rows)),
+                        "unpadded_tokens": lengths,
+                        "padded_tokens": padded_tokens,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            for row in encoded:
+                sample_index = row["sample_index"]
+                if sample_index in seen:
+                    continue
+                seen.add(sample_index)
+                token_lengths.append(len(row["input_ids"]))
+                tokenization_stream.write(
+                    json.dumps(
+                        {
+                            "sample_index": sample_index,
+                            "task": row["task"],
+                            "stratum": row["stratum"],
+                            "record_key": row["record_key"],
+                            "prompt_tokens": row["prompt_tokens"],
+                            "completion_tokens": row["completion_tokens"],
+                            "total_tokens": len(row["input_ids"]),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+        for stream in (schedule_stream, tokenization_stream):
+            stream.flush()
+            os.fsync(stream.fileno())
+    expected = {row.sample_index for batch in schedule for row in batch.rows}
+    if seen != expected:
+        raise AssertionError("tokenization preflight did not cover every training record")
+    if widest is None or not token_lengths:
+        raise AssertionError("empty tokenization preflight")
+    write_json(
+        output_dir / "tokenization.json",
+        {
+            "maximum_allowed_tokens": MAX_TRAIN_TOKENS,
+            "unique_records": len(token_lengths),
+            "minimum_tokens": min(token_lengths),
+            "maximum_tokens": max(token_lengths),
+            "mean_tokens": sum(token_lengths) / len(token_lengths),
+            "record_manifest": "tokenization_records.jsonl",
+            "preflight": "all unique records tokenized before optimizer step 1",
+            "widest_scheduled_batch": {
+                "optimizer_step": widest.optimizer_step,
+                "task": widest.task,
+                "batch_size": len(widest.rows),
+                "sample_indices": [row.sample_index for row in widest.rows],
+                "padded_tokens": widest_shape[2],
+                "tensor_token_positions": widest_shape[1],
+                "quadratic_attention_proxy": widest_shape[0],
+            },
+        },
+    )
+    return widest
+
+
+def load_checkpoint_adapter(model: Any, checkpoint_dir: Path) -> None:
+    from peft import set_peft_model_state_dict
+    from peft.utils.save_and_load import load_peft_weights
+
+    adapter_dir = checkpoint_dir / "adapter"
+    if not (checkpoint_dir / "COMPLETE").is_file():
+        raise RuntimeError(f"incomplete resume checkpoint: {checkpoint_dir}")
+    if not adapter_dir.is_dir():
+        raise RuntimeError(f"resume checkpoint has no adapter: {checkpoint_dir}")
+    state_dict = load_peft_weights(str(adapter_dir), device="cpu")
+    load_result = set_peft_model_state_dict(model, state_dict)
+    if load_result.unexpected_keys:
+        raise RuntimeError(
+            f"unexpected adapter keys in resume checkpoint: {load_result.unexpected_keys[:10]}"
+        )
+
+
+def save_training_checkpoint(
+    torch: Any,
+    model: Any,
+    optimizer: Any,
+    scheduler: Any,
+    output_dir: Path,
+    regime: str,
+    schedule_sha256: str,
+    completed_steps: int,
+    step_rows: list[dict[str, Any]],
+    task_counts: Counter[str],
+    task_presentations: Counter[str],
+    stratum_presentations: Counter[str],
+) -> Path:
+    checkpoint_root = output_dir / "checkpoints"
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = checkpoint_root / f"step-{completed_steps:08d}"
+    if checkpoint_dir.exists():
+        raise RuntimeError(f"checkpoint already exists: {checkpoint_dir}")
+    checkpoint_dir.mkdir()
+    model.save_pretrained(checkpoint_dir / "adapter", safe_serialization=True)
+    trainer_state = {
+        "completed_steps": completed_steps,
+        "training_regime": regime,
+        "schedule_sha256": schedule_sha256,
+        "git_commit": git_commit(),
+        "qlora_signature": qlora_signature(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "python_random_state": random.getstate(),
+        "torch_rng_state": torch.get_rng_state(),
+        "cuda_rng_states": torch.cuda.get_rng_state_all(),
+        "step_rows": step_rows,
+        "task_counts": dict(task_counts),
+        "task_presentations": dict(task_presentations),
+        "stratum_presentations": dict(stratum_presentations),
+    }
+    state_tmp = checkpoint_dir / "trainer_state.pt.tmp"
+    torch.save(trainer_state, state_tmp)
+    os.replace(state_tmp, checkpoint_dir / "trainer_state.pt")
+    write_json(
+        checkpoint_dir / "state.json",
+        {
+            "completed_steps": completed_steps,
+            "training_regime": regime,
+            "schedule_sha256": schedule_sha256,
+            "git_commit": git_commit(),
+            "qlora_signature": qlora_signature(),
+            "saved_at": utc_now(),
+        },
+    )
+    (checkpoint_dir / "COMPLETE").write_text(utc_now() + "\n", encoding="utf-8")
+    latest_tmp = checkpoint_root / "LATEST.tmp"
+    latest_tmp.write_text(checkpoint_dir.name + "\n", encoding="utf-8")
+    os.replace(latest_tmp, checkpoint_root / "LATEST")
+    completed = sorted(
+        path
+        for path in checkpoint_root.glob("step-*")
+        if (path / "COMPLETE").is_file()
+    )
+    for obsolete in completed[:-2]:
+        if obsolete.parent.resolve() != checkpoint_root.resolve():
+            raise AssertionError(f"refusing to remove checkpoint outside root: {obsolete}")
+        shutil.rmtree(obsolete)
+    return checkpoint_dir
 
 
 def train_adapter(
     torch: Any,
     model: Any,
-    tokenized: list[dict[str, Any]],
+    tokenizer: Any,
+    prepared: list[PreparedExample],
+    eligible: list[SentenceRecord],
     output_dir: Path,
+    seed: int,
+    pad_token_id: int,
+    regime: str,
+    resume_from: Path | None,
 ) -> dict[str, Any]:
-    if len(tokenized) != TOTAL_STEPS:
-        raise AssertionError(f"expected {TOTAL_STEPS} tokenized records")
-    device = next(model.parameters()).device
+    from transformers import get_linear_schedule_with_warmup
+
+    ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
+    re_template = RE_TEMPLATE.read_text(encoding="utf-8")
+    schedule = build_training_schedule(prepared, seed, regime)
+    widest = preflight_training_schedule(
+        tokenizer,
+        schedule,
+        eligible,
+        output_dir,
+        ner_template,
+        re_template,
+    )
+    schedule_sha256 = sha256_file(output_dir / "training_schedule.jsonl")
+    total_steps = len(schedule)
+    expected_task_steps = dict(Counter(batch.task for batch in schedule))
+    expected_task_presentations = dict(
+        Counter(row.task for batch in schedule for row in batch.rows)
+    )
+    expected_stratum_presentations = dict(
+        Counter(row.stratum for batch in schedule for row in batch.rows)
+    )
+    sample_presentations = Counter(
+        row.sample_index for batch in schedule for row in batch.rows
+    )
+    repetition_values = set(sample_presentations.values())
+    if len(repetition_values) != 1:
+        raise AssertionError("training records have unequal repetition counts")
+    record_repetitions = repetition_values.pop()
+
+    resume_metadata: dict[str, Any] | None = None
+    if resume_from is not None:
+        resume_from = resume_from.resolve()
+        metadata_path = resume_from / "state.json"
+        if not metadata_path.is_file():
+            raise RuntimeError(f"resume checkpoint has no state.json: {resume_from}")
+        resume_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        expected_resume_metadata = {
+            "training_regime": regime,
+            "schedule_sha256": schedule_sha256,
+            "git_commit": git_commit(),
+            "qlora_signature": qlora_signature(),
+        }
+        for key, expected in expected_resume_metadata.items():
+            if resume_metadata.get(key) != expected:
+                raise RuntimeError(
+                    f"resume checkpoint {key} mismatch: "
+                    f"{resume_metadata.get(key)!r} != {expected!r}"
+                )
+        load_checkpoint_adapter(model, resume_from)
+
+    parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    device = parameters[0].device
     model.train()
-    longest = max(tokenized, key=lambda row: len(row["input_ids"]))
-    smoke_batch = tensor_batch(torch, longest, device)
+    widest_encoded = encode_training_batch(
+        tokenizer, widest, eligible, ner_template, re_template
+    )
+    smoke_batch = tensor_batch(torch, widest_encoded, device, pad_token_id)
+    parameter_snapshot = [parameter.detach().cpu().clone() for parameter in parameters]
+    cpu_rng_state = torch.get_rng_state()
+    cuda_rng_states = torch.cuda.get_rng_state_all()
+    smoke_optimizer = torch.optim.AdamW(
+        parameters,
+        lr=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
+        fused=True,
+    )
     torch.cuda.reset_peak_memory_stats()
     with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
         smoke_loss = model(**smoke_batch).loss
     if not torch.isfinite(smoke_loss):
         raise RuntimeError(f"non-finite smoke loss: {smoke_loss.item()}")
-    smoke_loss_value = float(smoke_loss.detach().cpu())
+    state_creation_loss_value = float(smoke_loss.detach().cpu())
     smoke_loss.backward()
     smoke_gradients = [
         parameter.grad
@@ -563,55 +1136,215 @@ def train_adapter(
         raise RuntimeError("memory smoke produced no LoRA gradients")
     if not all(torch.isfinite(gradient).all() for gradient in smoke_gradients):
         raise RuntimeError("memory smoke produced non-finite gradients")
-    model.zero_grad(set_to_none=True)
-    del smoke_batch, smoke_gradients, smoke_loss
+    smoke_optimizer.step()
+    smoke_optimizer.zero_grad(set_to_none=True)
+    del smoke_gradients, smoke_loss
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        resident_state_loss = model(**smoke_batch).loss
+    if not torch.isfinite(resident_state_loss):
+        raise RuntimeError(
+            f"non-finite resident-state smoke loss: {resident_state_loss.item()}"
+        )
+    resident_state_loss_value = float(resident_state_loss.detach().cpu())
+    resident_state_loss.backward()
+    smoke_gradients = [
+        parameter.grad
+        for parameter in model.parameters()
+        if parameter.requires_grad and parameter.grad is not None
+    ]
+    if not smoke_gradients or not all(
+        torch.isfinite(gradient).all() for gradient in smoke_gradients
+    ):
+        raise RuntimeError("resident-state memory smoke produced invalid gradients")
+    smoke_optimizer.step()
+    smoke_peak_allocated = torch.cuda.max_memory_allocated()
+    smoke_peak_reserved = torch.cuda.max_memory_reserved()
+    with torch.no_grad():
+        for parameter, initial in zip(parameters, parameter_snapshot, strict=True):
+            parameter.copy_(initial)
+    smoke_optimizer.zero_grad(set_to_none=True)
+    torch.set_rng_state(cpu_rng_state)
+    torch.cuda.set_rng_state_all(cuda_rng_states)
+    del (
+        smoke_batch,
+        smoke_gradients,
+        resident_state_loss,
+        smoke_optimizer,
+        parameter_snapshot,
+        cpu_rng_state,
+        cuda_rng_states,
+    )
     torch.cuda.empty_cache()
 
-    parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.AdamW(
         parameters,
         lr=LEARNING_RATE,
-        weight_decay=0.0,
+        weight_decay=WEIGHT_DECAY,
         fused=True,
     )
-    step_rows = []
-    task_counts: Counter[str] = Counter()
-    wall_start = time.monotonic()
-    for row in tokenized:
-        batch = tensor_batch(torch, row, device)
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            loss = model(**batch).loss
-        if not torch.isfinite(loss):
-            raise RuntimeError(
-                f"non-finite loss at optimizer step {row['optimizer_step']}: {loss.item()}"
-            )
-        loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(parameters, max_norm=1.0)
-        if not torch.isfinite(grad_norm):
-            raise RuntimeError(
-                f"non-finite gradient norm at optimizer step {row['optimizer_step']}"
-            )
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        task_counts[row["task"]] += 1
-        step_row = {
-            "optimizer_step": row["optimizer_step"],
-            "task": row["task"],
-            "record_key": row["record_key"],
-            "loss": float(loss.detach().cpu()),
-            "gradient_norm_before_clipping": float(grad_norm.detach().cpu()),
-            "learning_rate": LEARNING_RATE,
-        }
-        step_rows.append(step_row)
-        print(
-            f"[train {row['optimizer_step']}/{TOTAL_STEPS}] {row['task']} "
-            f"{row['record_key']} loss={step_row['loss']:.6f}",
-            flush=True,
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=WARMUP_STEPS,
+        num_training_steps=total_steps,
+    )
+    if resume_from is None:
+        completed_steps = 0
+        step_rows: list[dict[str, Any]] = []
+        task_counts: Counter[str] = Counter()
+        task_presentations: Counter[str] = Counter()
+        stratum_presentations: Counter[str] = Counter()
+    else:
+        trainer_state = torch.load(
+            resume_from / "trainer_state.pt",
+            map_location="cpu",
+            weights_only=False,
         )
-        del batch, loss, grad_norm
+        completed_steps = int(trainer_state["completed_steps"])
+        if not 0 < completed_steps < total_steps:
+            raise RuntimeError(f"invalid resumed step {completed_steps}/{total_steps}")
+        if int(resume_metadata["completed_steps"]) != completed_steps:
+            raise RuntimeError("checkpoint JSON and trainer-state steps disagree")
+        if trainer_state["training_regime"] != regime:
+            raise RuntimeError("trainer-state regime mismatch")
+        if trainer_state["schedule_sha256"] != schedule_sha256:
+            raise RuntimeError("trainer-state schedule mismatch")
+        if trainer_state["git_commit"] != git_commit():
+            raise RuntimeError("trainer-state commit mismatch")
+        if trainer_state["qlora_signature"] != qlora_signature():
+            raise RuntimeError("trainer-state QLoRA signature mismatch")
+        optimizer.load_state_dict(trainer_state["optimizer"])
+        scheduler.load_state_dict(trainer_state["scheduler"])
+        if scheduler.last_epoch != completed_steps:
+            raise RuntimeError(
+                f"resumed scheduler is at {scheduler.last_epoch}, expected {completed_steps}"
+            )
+        if any(
+            group["lr"] != expected
+            for group, expected in zip(
+                optimizer.param_groups, scheduler.get_last_lr(), strict=True
+            )
+        ):
+            raise RuntimeError("resumed optimizer and scheduler learning rates disagree")
+        step_rows = list(trainer_state["step_rows"])
+        task_counts = Counter(trainer_state["task_counts"])
+        task_presentations = Counter(trainer_state["task_presentations"])
+        stratum_presentations = Counter(trainer_state["stratum_presentations"])
+        if len(step_rows) != completed_steps:
+            raise RuntimeError("resumed loss history length does not match completed step")
+        for saved, scheduled in zip(
+            step_rows, schedule[:completed_steps], strict=True
+        ):
+            if (
+                saved["optimizer_step"] != scheduled.optimizer_step
+                or saved["task"] != scheduled.task
+                or saved["sample_indices"]
+                != [row.sample_index for row in scheduled.rows]
+            ):
+                raise RuntimeError("resumed history does not match the current schedule")
+        prefix = schedule[:completed_steps]
+        expected_prefix_task_counts = Counter(batch.task for batch in prefix)
+        expected_prefix_task_presentations = Counter(
+            row.task for batch in prefix for row in batch.rows
+        )
+        expected_prefix_stratum_presentations = Counter(
+            row.stratum for batch in prefix for row in batch.rows
+        )
+        if task_counts != expected_prefix_task_counts:
+            raise RuntimeError("resumed task-step counters do not match the schedule")
+        if task_presentations != expected_prefix_task_presentations:
+            raise RuntimeError("resumed task presentations do not match the schedule")
+        if stratum_presentations != expected_prefix_stratum_presentations:
+            raise RuntimeError("resumed stratum presentations do not match the schedule")
+        random.setstate(trainer_state["python_random_state"])
+        torch.set_rng_state(trainer_state["torch_rng_state"])
+        torch.cuda.set_rng_state_all(trainer_state["cuda_rng_states"])
+        del trainer_state
+    wall_start = time.monotonic()
+    log_path = output_dir / "training_log.jsonl"
+    with log_path.open("w", encoding="utf-8") as log_stream:
+        for previous in step_rows:
+            log_stream.write(json.dumps(previous, sort_keys=True) + "\n")
+        for scheduled in schedule[completed_steps:]:
+            encoded = encode_training_batch(
+                tokenizer, scheduled, eligible, ner_template, re_template
+            )
+            batch = tensor_batch(torch, encoded, device, pad_token_id)
+            learning_rate = float(optimizer.param_groups[0]["lr"])
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                loss = model(**batch).loss
+            if not torch.isfinite(loss):
+                raise RuntimeError(
+                    f"non-finite loss at optimizer step {scheduled.optimizer_step}: {loss.item()}"
+                )
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(parameters, max_norm=1.0)
+            if not torch.isfinite(grad_norm):
+                raise RuntimeError(
+                    f"non-finite gradient norm at optimizer step {scheduled.optimizer_step}"
+                )
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            task_counts[scheduled.task] += 1
+            task_presentations[scheduled.task] += len(encoded)
+            stratum_presentations.update(row["stratum"] for row in encoded)
+            step_row = {
+                "optimizer_step": scheduled.optimizer_step,
+                "task_step": scheduled.task_step,
+                "task": scheduled.task,
+                "batch_size": len(encoded),
+                "sample_indices": [row["sample_index"] for row in encoded],
+                "record_keys": [row["record_key"] for row in encoded],
+                "strata": dict(Counter(row["stratum"] for row in encoded)),
+                "padded_tokens": max(len(row["input_ids"]) for row in encoded),
+                "supervised_tokens": sum(
+                    sum(label != -100 for label in row["labels"])
+                    for row in encoded
+                ),
+                "loss": float(loss.detach().cpu()),
+                "gradient_norm_before_clipping": float(grad_norm.detach().cpu()),
+                "learning_rate": learning_rate,
+            }
+            step_rows.append(step_row)
+            log_stream.write(json.dumps(step_row, sort_keys=True) + "\n")
+            if scheduled.optimizer_step % 100 == 0:
+                log_stream.flush()
+            print(
+                f"[train {scheduled.optimizer_step}/{total_steps}] "
+                f"{scheduled.task} {scheduled.task_step}/{expected_task_steps[scheduled.task]} "
+                f"loss={step_row['loss']:.6f} lr={learning_rate:.8f}",
+                flush=True,
+            )
+            if (
+                regime == FULL_PASS_REGIME
+                and scheduled.optimizer_step % CHECKPOINT_INTERVAL == 0
+                and scheduled.optimizer_step < total_steps
+            ):
+                checkpoint_dir = save_training_checkpoint(
+                    torch,
+                    model,
+                    optimizer,
+                    scheduler,
+                    output_dir,
+                    regime,
+                    schedule_sha256,
+                    scheduled.optimizer_step,
+                    step_rows,
+                    task_counts,
+                    task_presentations,
+                    stratum_presentations,
+                )
+                print(f"[checkpoint] {checkpoint_dir}", flush=True)
+            del batch, encoded, loss, grad_norm
+        log_stream.flush()
+        os.fsync(log_stream.fileno())
 
-    if task_counts != {"ner": NER_STEPS, "re": RE_STEPS}:
+    if dict(task_counts) != expected_task_steps:
         raise AssertionError(f"wrong completed task counts: {task_counts}")
+    if dict(task_presentations) != expected_task_presentations:
+        raise AssertionError(f"wrong task presentation counts: {task_presentations}")
+    if dict(stratum_presentations) != expected_stratum_presentations:
+        raise AssertionError(f"wrong stratum presentation counts: {stratum_presentations}")
     adapter_dir = output_dir / "adapter"
     model.save_pretrained(adapter_dir, safe_serialization=True)
     adapter_config = json.loads(
@@ -623,38 +1356,75 @@ def train_adapter(
         )
     result = {
         "optimizer": "torch.optim.AdamW(fused=True)",
+        "training_regime": regime,
         "optimizer_steps": len(step_rows),
         "task_steps": dict(task_counts),
+        "selected_training_records": len(prepared),
+        "unique_training_records": len(sample_presentations),
+        "dropped_training_records": len(prepared) - len(sample_presentations),
+        "example_presentations": sum(task_presentations.values()),
+        "task_presentations": dict(task_presentations),
+        "stratum_presentations": dict(stratum_presentations),
+        "record_repetitions": record_repetitions,
+        "resumed_from": str(resume_from) if resume_from is not None else None,
+        "resumed_completed_steps": (
+            int(resume_metadata["completed_steps"])
+            if resume_metadata is not None
+            else 0
+        ),
+        "checkpoint_interval_steps": (
+            CHECKPOINT_INTERVAL if regime == FULL_PASS_REGIME else None
+        ),
+        "schedule_sha256": schedule_sha256,
         "learning_rate": LEARNING_RATE,
-        "scheduler": "constant (none)",
-        "warmup_steps": 0,
-        "micro_batch_size": 1,
-        "gradient_accumulation_steps": 1,
-        "weight_decay": 0.0,
+        "scheduler": "linear warmup then linear decay",
+        "warmup_steps": WARMUP_STEPS,
+        "micro_batch_size": MICRO_BATCH_SIZE,
+        "actual_batch_size_counts": dict(
+            sorted(Counter(len(batch.rows) for batch in schedule).items())
+        ),
+        "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
+        "weight_decay": WEIGHT_DECAY,
         "max_gradient_norm": 1.0,
         "bf16": True,
+        "base_weights": "bitsandbytes 4-bit NF4 with double quantization",
+        "adapter_dtype": "float32",
         "tf32": True,
         "gradient_checkpointing": True,
         "smoke": {
-            "optimizer_step_taken": False,
-            "record_key": longest["record_key"],
-            "tokens": len(longest["input_ids"]),
-            "loss": smoke_loss_value,
+            "optimizer_step_executed_then_parameters_restored": True,
+            "scheduled_optimizer_step": widest.optimizer_step,
+            "task": widest.task,
+            "record_keys": [row.record_key for row in widest.rows],
+            "batch_size": len(widest.rows),
+            "padded_tokens": max(len(row["input_ids"]) for row in widest_encoded),
+            "state_creation_loss": state_creation_loss_value,
+            "resident_state_loss": resident_state_loss_value,
+            "peak_cuda_memory_allocated_bytes": smoke_peak_allocated,
+            "peak_cuda_memory_reserved_bytes": smoke_peak_reserved,
         },
         "wall_seconds": round(time.monotonic() - wall_start, 6),
         "peak_cuda_memory_bytes": torch.cuda.max_memory_allocated(),
         "steps": step_rows,
     }
     write_json(output_dir / "training_metrics.json", result)
-    del optimizer
+    del optimizer, scheduler
     model.zero_grad(set_to_none=True)
     torch.cuda.empty_cache()
     return result
 
 
 def parse_generated_json(raw: str) -> tuple[Any, str | None]:
+    text = raw.strip()
+    lines = text.splitlines()
+    if (
+        len(lines) >= 3
+        and lines[0].strip().lower() in {"```", "```json"}
+        and lines[-1].strip() == "```"
+    ):
+        text = "\n".join(lines[1:-1]).strip()
     try:
-        return json.loads(raw.strip()), None
+        return json.loads(text), None
     except json.JSONDecodeError as error:
         return None, str(error)
 
@@ -975,22 +1745,86 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument(
+        "--training-regime",
+        choices=TRAINING_REGIMES,
+        default=PILOT_REGIME,
+    )
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        help="resume full-pass training from a completed checkpoint directory",
+    )
+    parser.add_argument(
         "--prepare-only",
         action="store_true",
-        help="write and validate sampled prompts without loading model dependencies",
+        help="write and validate training records without loading model dependencies",
     )
     return parser.parse_args()
 
 
 def run(args: argparse.Namespace, output_dir: Path) -> None:
+    if args.resume_from is not None and args.training_regime != FULL_PASS_REGIME:
+        raise ValueError("--resume-from is only valid with --training-regime full-pass")
+    if args.resume_from is not None and args.prepare_only:
+        raise ValueError("--resume-from cannot be combined with --prepare-only")
     started_at = utc_now()
     wall_start = time.monotonic()
     targets, eligible = load_pilot_records()
-    sampled = sample_pilot_examples(eligible, args.seed)
-    prepared = prepare_training_material(sampled, eligible, output_dir, args.seed)
+    selected = select_training_examples(eligible, args.seed, args.training_regime)
+    prepared = prepare_training_material(
+        selected,
+        eligible,
+        output_dir,
+        args.seed,
+        args.training_regime,
+    )
+    planned_schedule = build_training_schedule(
+        prepared, args.seed, args.training_regime
+    )
+    scheduled_sample_indices = {
+        row.sample_index for batch in planned_schedule for row in batch.rows
+    }
+    dropped = [
+        row for row in prepared if row.sample_index not in scheduled_sample_indices
+    ]
+    if args.training_regime == PILOT_REGIME and dropped:
+        raise AssertionError("pilot schedule dropped training records")
+    if args.training_regime == FULL_PASS_REGIME and (
+        len(dropped) != 2 or {row.task for row in dropped} != {"re"}
+    ):
+        raise AssertionError("full-pass schedule must drop exactly two RE records")
+    write_json(
+        output_dir / "dropped_training_records.json",
+        {
+            "policy": "drop_last=True for each task-homogeneous stream",
+            "count": len(dropped),
+            "records": [
+                {
+                    "sample_index": row.sample_index,
+                    "task": row.task,
+                    "stratum": row.stratum,
+                    "record_key": row.record_key,
+                    "label": (
+                        row.source.pair.label
+                        if row.source.pair is not None
+                        else None
+                    ),
+                }
+                for row in dropped
+            ],
+        },
+    )
+    planned_task_steps = dict(Counter(batch.task for batch in planned_schedule))
+    planned_task_presentations = dict(
+        Counter(row.task for batch in planned_schedule for row in batch.rows)
+    )
+    planned_stratum_presentations = dict(
+        Counter(row.stratum for batch in planned_schedule for row in batch.rows)
+    )
     common = {
         "schema_version": 1,
-        "experiment": "Qwen3.8-27B GSAP-ERE LoRA pilot",
+        "experiment": f"Qwen3.8-27B GSAP-ERE 4-bit QLoRA {args.training_regime}",
+        "training_regime": args.training_regime,
         "status": "prepared" if args.prepare_only else "running",
         "target": {
             "document_id": TARGET_DOCUMENT_ID,
@@ -1000,22 +1834,64 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             "excluded_from_evaluation_demonstrations": True,
         },
         "training": {
-            "optimizer_steps": TOTAL_STEPS,
-            "ner_steps": NER_STEPS,
-            "re_steps": RE_STEPS,
-            "re_positive_steps": RE_POSITIVE_STEPS,
-            "re_nil_steps": RE_NIL_STEPS,
+            "optimizer_steps": len(planned_schedule),
+            "task_steps": planned_task_steps,
+            "selected_training_records": len(prepared),
+            "trained_unique_records": len(scheduled_sample_indices),
+            "dropped_training_records": len(dropped),
+            "example_presentations": sum(planned_task_presentations.values()),
+            "task_presentations": planned_task_presentations,
+            "stratum_presentations": planned_stratum_presentations,
+            "record_repetitions": (
+                len(planned_schedule) * MICRO_BATCH_SIZE // len(prepared)
+                if args.training_regime == PILOT_REGIME
+                else 1
+            ),
             "seed": args.seed,
             "learning_rate": LEARNING_RATE,
-            "micro_batch_size": 1,
-            "gradient_accumulation_steps": 1,
+            "scheduler": "linear warmup then linear decay",
+            "warmup_steps": WARMUP_STEPS,
+            "micro_batch_size": MICRO_BATCH_SIZE,
+            "planned_actual_batch_size_counts": dict(
+                sorted(Counter(len(batch.rows) for batch in planned_schedule).items())
+            ),
+            "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
+            "weight_decay": WEIGHT_DECAY,
+            "optimizer": "torch.optim.AdamW(fused=True)",
+            "checkpoint_interval_steps": (
+                CHECKPOINT_INTERVAL
+                if args.training_regime == FULL_PASS_REGIME
+                else None
+            ),
+            "task_batches": "task-homogeneous",
+            "drop_last": args.training_regime == FULL_PASS_REGIME,
+            "resume_from": (
+                str(args.resume_from.resolve())
+                if args.resume_from is not None
+                else None
+            ),
+            "full_pass_re_representation": (
+                "all ordered pairs of distinct gold entities; no NIL rebalancing"
+                if args.training_regime == FULL_PASS_REGIME
+                else None
+            ),
         },
         "model": {
             "id": MODEL_ID,
             "revision": MODEL_REVISION,
             "class": "Qwen3_5ForCausalLM",
-            "dtype": "bfloat16",
-            "quantized": False,
+            "quantized_linear_weight_dtype": "4-bit NF4",
+            "non_quantized_base_parameter_dtype": "float32 after k-bit preparation",
+            "compute_dtype": "bfloat16",
+            "adapter_dtype": "float32",
+            "quantized": True,
+            "quantization": {
+                "backend": "bitsandbytes",
+                "bits": 4,
+                "quant_type": "nf4",
+                "compute_dtype": "bfloat16",
+                "double_quant": True,
+            },
             "thinking": False,
             "lora": {
                 "r": LORA_R,
@@ -1026,13 +1902,14 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             },
         },
         "evaluation": {
+            "base_variant": "the same 4-bit quantized base with the LoRA adapter disabled",
             "target_sentence_count": len(targets),
             "ner_shots": NER_SHOTS,
             "re_shots": RE_SHOTS,
             "full_article_context": False,
             "thinking": False,
             "generation": "greedy Hugging Face generation without an Ollama JSON grammar",
-            "parsing": "strict whole-response JSON parsing followed by paper_llm sanitizers",
+            "parsing": "whole-response JSON with one optional outer Markdown JSON fence, followed by paper_llm sanitizers",
             "relation_candidates": "all ordered pairs of each system's predicted entities",
         },
         "retriever": {"id": RETRIEVER_ID, "revision": RETRIEVER_REVISION},
@@ -1055,36 +1932,29 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         print(f"Prepared {len(prepared)} training records in {output_dir}", flush=True)
         return
 
-    similarities = compute_similarities(eligible, targets)
-    pair_examples, pairs_by_signature = build_pair_examples(eligible)
+    del selected, planned_schedule
     torch, tokenizer, model, target_report = load_model_and_tokenizer(args.seed)
     write_json(output_dir / "targeted_modules.json", target_report)
-    tokenized = [encode_training_example(tokenizer, example) for example in prepared]
-    token_lengths = [len(row["input_ids"]) for row in tokenized]
-    write_json(
-        output_dir / "tokenization.json",
-        {
-            "maximum_allowed_tokens": MAX_TRAIN_TOKENS,
-            "minimum_tokens": min(token_lengths),
-            "maximum_tokens": max(token_lengths),
-            "mean_tokens": sum(token_lengths) / len(token_lengths),
-            "records": [
-                {
-                    "optimizer_step": row["optimizer_step"],
-                    "task": row["task"],
-                    "record_key": row["record_key"],
-                    "prompt_tokens": row["prompt_tokens"],
-                    "completion_tokens": row["completion_tokens"],
-                    "total_tokens": len(row["input_ids"]),
-                }
-                for row in tokenized
-            ],
-        },
+    if tokenizer.pad_token_id is None:
+        raise RuntimeError("tokenizer has no pad token ID")
+    training_metrics = train_adapter(
+        torch,
+        model,
+        tokenizer,
+        prepared,
+        eligible,
+        output_dir,
+        args.seed,
+        tokenizer.pad_token_id,
+        args.training_regime,
+        args.resume_from,
     )
-    training_metrics = train_adapter(torch, model, tokenized, output_dir)
     model.gradient_checkpointing_disable()
     model.config.use_cache = True
     model.eval()
+
+    similarities = compute_similarities(eligible, targets)
+    pair_examples, pairs_by_signature = build_pair_examples(eligible)
 
     with model.disable_adapter():
         base_result = evaluate_variant(
@@ -1130,6 +2000,7 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
                     "torch",
                     "transformers",
                     "peft",
+                    "bitsandbytes",
                     "accelerate",
                     "sentence-transformers",
                 )

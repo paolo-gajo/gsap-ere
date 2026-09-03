@@ -2,6 +2,7 @@
 # gsapere is installed with --no-deps in a Python 3.10 .eval-env because only
 # its evaluator is used and its declared Transformers constraint conflicts.
 accelerate==1.13.0
+bitsandbytes==0.50.1+computecanada
 huggingface_hub==1.18.0
 numpy==2.4.2
 peft==0.19.1

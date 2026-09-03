@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import pickle
+import tempfile
 import unittest
 from collections import Counter
+from pathlib import Path
 
 import lora_pilot
 from paper_llm.inference import Entity
@@ -93,14 +96,22 @@ class LoRAPilotTests(unittest.TestCase):
 
     def test_completion_only_masking(self):
         tokenizer = FakeTokenizer()
+        source = next(example for example in self.examples if example.task == "re")
+        record = self.eligible[source.record_index]
         example = lora_pilot.PreparedExample(
-            optimizer_step=1,
+            sample_index=1,
             task="re",
-            record_key="example:0",
-            prompt="classify this pair",
-            completion='{"label":"NIL"}',
+            stratum=lora_pilot.example_stratum(source),
+            record_key=record.key,
+            source=source,
         )
-        encoded = lora_pilot.encode_training_example(tokenizer, example)
+        encoded = lora_pilot.encode_training_example(
+            tokenizer,
+            example,
+            self.eligible,
+            lora_pilot.NER_TEMPLATE.read_text(encoding="utf-8"),
+            lora_pilot.RE_TEMPLATE.read_text(encoding="utf-8"),
+        )
         self.assertEqual(tokenizer.assertions, (False, True, False))
         self.assertTrue(
             all(
@@ -113,6 +124,181 @@ class LoRAPilotTests(unittest.TestCase):
             encoded["input_ids"][encoded["prompt_tokens"] :],
         )
         self.assertEqual(encoded["input_ids"][-1], tokenizer.eos_token_id)
+
+    def test_pilot_schedule_is_400_true_batch8_updates(self):
+        prepared = []
+        for sample_index, source in enumerate(self.examples, start=1):
+            record = self.eligible[source.record_index]
+            prepared.append(
+                lora_pilot.PreparedExample(
+                    sample_index=sample_index,
+                    task=source.task,
+                    stratum=lora_pilot.example_stratum(source),
+                    record_key=record.key,
+                    source=source,
+                )
+            )
+        schedule = lora_pilot.build_training_schedule(
+            prepared, lora_pilot.DEFAULT_SEED, lora_pilot.PILOT_REGIME
+        )
+        self.assertEqual(len(schedule), 400)
+        self.assertEqual(Counter(batch.task for batch in schedule), {"ner": 200, "re": 200})
+        self.assertTrue(all(len(batch.rows) == 8 for batch in schedule))
+        self.assertTrue(
+            all(
+                len({row.sample_index for row in batch.rows}) == len(batch.rows)
+                for batch in schedule
+            )
+        )
+        self.assertEqual(
+            set(
+                Counter(
+                    row.sample_index for batch in schedule for row in batch.rows
+                ).values()
+            ),
+            {16},
+        )
+        self.assertEqual(
+            Counter(row.stratum for batch in schedule for row in batch.rows),
+            {"ner": 1600, "positive": 800, "nil": 800},
+        )
+
+    def test_full_pass_counts_and_drops_terminal_remainder(self):
+        sources = lora_pilot.full_pass_examples(
+            self.eligible, lora_pilot.DEFAULT_SEED
+        )
+        prepared = [
+            lora_pilot.PreparedExample(
+                sample_index=index,
+                task=source.task,
+                stratum=lora_pilot.example_stratum(source),
+                record_key=self.eligible[source.record_index].key,
+                source=source,
+            )
+            for index, source in enumerate(sources, start=1)
+        ]
+        schedule = lora_pilot.build_training_schedule(
+            prepared, lora_pilot.DEFAULT_SEED, lora_pilot.FULL_PASS_REGIME
+        )
+        self.assertEqual(Counter(source.task for source in sources), {"ner": 20712, "re": 189786})
+        self.assertEqual(Counter(source.task for source in sources if source.task == "re" and source.pair.label != "NIL"), {"re": 30276})
+        self.assertEqual(
+            sum(
+                source.task == "re" and source.pair.label == "NIL"
+                for source in sources
+            ),
+            159510,
+        )
+        self.assertEqual(len(schedule), 26312)
+        self.assertEqual(Counter(batch.task for batch in schedule), {"ner": 2589, "re": 23723})
+        self.assertEqual(Counter(len(batch.rows) for batch in schedule), {8: 26312})
+        self.assertTrue(
+            all({row.task for row in batch.rows} == {batch.task} for batch in schedule)
+        )
+        full_presentations = Counter(
+            row.sample_index for batch in schedule for row in batch.rows
+        )
+        self.assertEqual(
+            len(full_presentations),
+            210496,
+        )
+        self.assertEqual(set(full_presentations.values()), {1})
+        dropped = [
+            row for row in prepared if row.sample_index not in full_presentations
+        ]
+        self.assertEqual(
+            [(row.sample_index, row.stratum) for row in dropped],
+            [(57757, "nil"), (118283, "nil")],
+        )
+
+    def test_padding_and_outer_json_fence(self):
+        rows = [
+            {
+                "input_ids": [1, 2, 3],
+                "attention_mask": [1, 1, 1],
+                "labels": [-100, 2, 3],
+            },
+            {
+                "input_ids": [4, 5],
+                "attention_mask": [1, 1],
+                "labels": [-100, 5],
+            },
+        ]
+        padded = lora_pilot.padded_training_rows(rows, pad_token_id=99)
+        self.assertEqual(padded["input_ids"][1], [4, 5, 99])
+        self.assertEqual(padded["attention_mask"][1], [1, 1, 0])
+        self.assertEqual(padded["labels"][1], [-100, 5, -100])
+        parsed, error = lora_pilot.parse_generated_json(
+            '```json\n{"entities": []}\n```'
+        )
+        self.assertEqual(parsed, {"entities": []})
+        self.assertIsNone(error)
+        parsed, error = lora_pilot.parse_generated_json(
+            'result:\n```json\n{"entities": []}\n```'
+        )
+        self.assertIsNone(parsed)
+        self.assertIsNotNone(error)
+
+    def test_checkpoint_write_is_complete_and_retains_two(self):
+        class FakeCuda:
+            @staticmethod
+            def get_rng_state_all():
+                return [b"cuda-rng"]
+
+        class FakeTorch:
+            cuda = FakeCuda()
+
+            @staticmethod
+            def get_rng_state():
+                return b"cpu-rng"
+
+            @staticmethod
+            def save(value, path):
+                with Path(path).open("wb") as stream:
+                    pickle.dump(value, stream)
+
+        class FakeModel:
+            @staticmethod
+            def save_pretrained(path, *, safe_serialization):
+                self = Path(path)
+                self.mkdir(parents=True)
+                (self / "adapter_config.json").write_text("{}")
+                (self / "adapter_model.safetensors").write_bytes(b"weights")
+
+        class FakeStateful:
+            @staticmethod
+            def state_dict():
+                return {"state": "ok"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            for step in (1000, 2000, 3000):
+                lora_pilot.save_training_checkpoint(
+                    FakeTorch,
+                    FakeModel,
+                    FakeStateful,
+                    FakeStateful,
+                    output_dir,
+                    lora_pilot.FULL_PASS_REGIME,
+                    "schedule-sha256",
+                    step,
+                    [],
+                    Counter(),
+                    Counter(),
+                    Counter(),
+                )
+            checkpoint_root = output_dir / "checkpoints"
+            self.assertEqual(
+                (checkpoint_root / "LATEST").read_text().strip(),
+                "step-00003000",
+            )
+            self.assertEqual(
+                sorted(path.name for path in checkpoint_root.glob("step-*")),
+                ["step-00002000", "step-00003000"],
+            )
+            self.assertTrue(
+                (checkpoint_root / "step-00003000" / "COMPLETE").is_file()
+            )
 
     def test_prediction_shape_and_symmetric_canonicalization(self):
         target = self.targets[0]
