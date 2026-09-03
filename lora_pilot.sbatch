@@ -57,14 +57,14 @@ fi
 import importlib.metadata as metadata
 
 expected = {
-    "accelerate": "1.14.0",
+    "accelerate": "1.13.0",
     "huggingface_hub": "1.18.0",
     "numpy": "2.4.2",
-    "peft": "0.20.0",
+    "peft": "0.19.1",
     "safetensors": "0.7.0",
-    "sentence-transformers": "6.0.0",
+    "sentence-transformers": "5.1.2",
     "torch": "2.12.0",
-    "transformers": "5.16.1",
+    "transformers": "5.10.2",
 }
 actual = {name: metadata.version(name) for name in expected}
 base_versions = {name: version.split("+", 1)[0] for name, version in actual.items()}
