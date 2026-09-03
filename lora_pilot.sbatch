@@ -62,7 +62,7 @@ expected = {
     "numpy": "2.4.2",
     "peft": "0.19.1",
     "safetensors": "0.7.0",
-    "sentence-transformers": "5.1.2",
+    "sentence-transformers": "6.0.0",
     "torch": "2.12.0",
     "transformers": "5.10.2",
 }
