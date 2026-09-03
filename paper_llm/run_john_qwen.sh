@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 model="${MODEL:-qwen3.8:27b}"
+document_id="${DOCUMENT_ID:-00016_2106_09462.txt}"
 base_url="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
 think="${THINK:-0}"
 if [[ "${think}" != "0" && "${think}" != "1" ]]; then
@@ -31,39 +32,32 @@ if [[ "${re_shots}" != "1" && "${re_shots}" != "5" && "${re_shots}" != "10" ]]; 
   exit 1
 fi
 if [[ "${think}" == "1" ]]; then
-  mode_suffix="-thinking"
   default_ner_num_predict=4096
   default_re_num_predict=4096
   think_args=(--think)
 else
-  mode_suffix=""
   default_ner_num_predict=2048
   default_re_num_predict=64
   think_args=()
 fi
 if [[ "${zero_icl}" == "1" ]]; then
-  icl_suffix="-zero-icl"
+  ner_shots=0
+  effective_re_shots=0
   icl_args=(--ner-shots 0 --re-shots 0)
-elif [[ "${re_shots}" != "1" ]]; then
-  icl_suffix="-re-${re_shots}shot"
-  icl_args=(--ner-shots 10 --re-shots "${re_shots}")
 else
-  icl_suffix=""
-  icl_args=()
+  ner_shots=10
+  effective_re_shots="${re_shots}"
+  icl_args=(--ner-shots 10 --re-shots "${re_shots}")
 fi
 if [[ "${full_article_context}" == "1" ]]; then
-  context_suffix="-full-article"
   context_args=(--full-article-context)
 else
-  context_suffix=""
   context_args=()
 fi
-if [[ "${ner_output_format}" == "inline" ]]; then
-  ner_format_suffix="-ner-inline"
-else
-  ner_format_suffix=""
-fi
-default_result_dir="${script_dir}/results/qwen3.8-27b-ollama-john${mode_suffix}${icl_suffix}${context_suffix}${ner_format_suffix}-00016_2106_09462"
+model_slug="${model//\//-}"
+model_slug="${model_slug//:/-}"
+document_slug="${document_id%.txt}"
+default_result_dir="${script_dir}/results/model=${model_slug}/ner-examples=${ner_shots}/re-examples=${effective_re_shots}/full-context=${full_article_context}/ner-output=${ner_output_format}/thinking=${think}/${document_slug}"
 result_dir="${RESULT_DIR:-${default_result_dir}}"
 ner_num_predict="${NER_NUM_PREDICT:-${default_ner_num_predict}}"
 re_num_predict="${RE_NUM_PREDICT:-${default_re_num_predict}}"
@@ -168,6 +162,7 @@ fi
 "${venv_python}" "${script_dir}/inference.py" \
   --model "${model}" \
   --base-url "${base_url}" \
+  --document-id "${document_id}" \
   --output-dir "${result_dir}" \
   --ner-output-format "${ner_output_format}" \
   --ner-num-predict "${ner_num_predict}" \

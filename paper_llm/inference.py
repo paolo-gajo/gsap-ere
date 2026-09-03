@@ -934,7 +934,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=script_dir / "results" / "qwen3.8-27b-ollama-john-00016_2106_09462",
+        help="result directory; defaults to a directory nested by inference settings",
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -953,6 +953,19 @@ def parse_args() -> argparse.Namespace:
             else "ner_prompt_inline.md"
         )
         args.ner_template = script_dir / template_name
+    if args.output_dir is None:
+        model_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", args.model).strip("-")
+        args.output_dir = (
+            script_dir
+            / "results"
+            / f"model={model_slug}"
+            / f"ner-examples={args.ner_shots}"
+            / f"re-examples={args.re_shots}"
+            / f"full-context={int(args.full_article_context)}"
+            / f"ner-output={args.ner_output_format}"
+            / f"thinking={int(args.think)}"
+            / Path(args.document_id).stem
+        )
     return args
 
 
@@ -1257,6 +1270,14 @@ def main() -> None:
             "retriever": DEFAULT_RETRIEVER,
             "inference_framework": "Ollama",
             "temperature": 0.0,
+        },
+        "configuration": {
+            "model": args.model,
+            "ner_examples": args.ner_shots,
+            "re_examples": args.re_shots,
+            "full_context": args.full_article_context,
+            "ner_output": args.ner_output_format,
+            "thinking": args.think,
         },
         "actual_icl_configuration": {
             "ner_shots": args.ner_shots,

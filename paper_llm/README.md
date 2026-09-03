@@ -58,7 +58,7 @@ The script bootstraps an isolated environment, starts Ollama, resumes the model
 download if needed, runs the pipeline, and writes the authors' metrics to:
 
 ```text
-paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/
+paper_llm/results/model=qwen3.8-27b/ner-examples=10/re-examples=1/full-context=0/ner-output=indices/thinking=0/00016_2106_09462/
 ```
 
 Inference is resumable at the individual NER or RE prompt level.
@@ -71,7 +71,7 @@ NER_OUTPUT_FORMAT=inline bash paper_llm/run_john_qwen.sh
 ```
 
 Both formats are converted to the same internal token spans before RE and
-evaluation. Inline runs use a separate `*-ner-inline-*` result directory.
+evaluation. The `ner-output` result level distinguishes them.
 `paper_llm/run_john_inline_grid.sh` runs the five previously compared settings,
 with and without thinking, using inline NER.
 
@@ -82,7 +82,7 @@ every NER and RE prompt:
 FULL_ARTICLE_CONTEXT=1 bash paper_llm/run_john_qwen.sh
 ```
 
-This uses a separate `*-full-article-*` result directory.
+The `full-context` result level distinguishes this setting.
 Optional sections, including their headings, are omitted when empty.
 
 To run the same pipeline with Qwen3.8 thinking enabled:
@@ -91,9 +91,8 @@ To run the same pipeline with Qwen3.8 thinking enabled:
 THINK=1 bash paper_llm/run_john_qwen.sh
 ```
 
-This writes to the separate
-`paper_llm/results/qwen3.8-27b-ollama-john-thinking-00016_2106_09462/`
-directory. Thinking text is retained in `trace.jsonl`. The generation caps are
+The `thinking` result level distinguishes this setting. Thinking text is
+retained in `trace.jsonl`. The generation caps are
 raised from 2,048/64 to 4,096/4,096 tokens for NER/RE so the thinking tokens do
 not consume the short structured-answer allowance.
 
@@ -108,7 +107,7 @@ ZERO_ICL=1 THINK=1 bash paper_llm/run_john_qwen.sh
 
 These runs do not load the retriever or read the training demonstration pool.
 Their NER and RE prompt example sections are empty. Results are written to
-separate `*-zero-icl-*` directories.
+`ner-examples=0/re-examples=0`.
 
 ## RE-shot ablations
 
@@ -125,4 +124,4 @@ RE_SHOTS=10 THINK=1 bash paper_llm/run_john_qwen.sh
 The RE examples are selected with the reconstructed `similar+diverse`
 rule: prefer the matching ordered entity-type signature, then greedily
 maximize distinct relation labels with sentence cosine as the tie-break.
-Results are written to separate `*-re-5shot-*` or `*-re-10shot-*` directories.
+The `re-examples` result level distinguishes these settings.

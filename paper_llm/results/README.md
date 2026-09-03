@@ -1,10 +1,22 @@
 # Paper-method LLM results
 
-Each directory here contains one sentence-level, two-stage LLM pipeline run:
+Runs use one directory level per varying setting:
+
+```text
+model=<model>/
+  ner-examples=<count>/
+    re-examples=<count>/
+      full-context=<0|1>/
+        ner-output=<indices|inline>/
+          thinking=<0|1>/
+            <document-id>/
+```
+
+Each document directory contains one sentence-level, two-stage LLM pipeline run:
 
 - `prediction.json`: assembled entity and relation predictions;
 - `scores.json`: exact metrics from `gsapere.evaluation.hgere.evaluate`;
-- `run.json`: model, software, hardware, input hashes, and reconstruction notes;
+- `run.json`: all six settings, software, hardware, input hashes, and reconstruction notes;
 - `retrieval.json`: every selected training demonstration and similarity; and
 - `trace.jsonl`: exact prompts, raw responses, timings, and parsing warnings.
 

@@ -75,15 +75,15 @@
   },
   "artifacts": {
     "prediction": {
-      "path": "paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/prediction.json",
+      "path": "paper_llm/results/model=qwen3.8-27b/ner-examples=10/re-examples=1/full-context=0/ner-output=indices/thinking=0/00016_2106_09462/prediction.json",
       "sha256": "2fa9e0b53eb85fb5de5099f4f340e196c5f9287b075ba64992f579429df4a4d0"
     },
     "trace": {
-      "path": "paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/trace.jsonl",
+      "path": "paper_llm/results/model=qwen3.8-27b/ner-examples=10/re-examples=1/full-context=0/ner-output=indices/thinking=0/00016_2106_09462/trace.jsonl",
       "sha256": "6436715ae05984e95f32dfba2230bd617da364aab69d4c0175e78c99e5d8f148"
     },
     "retrieval": {
-      "path": "paper_llm/results/qwen3.8-27b-ollama-john-00016_2106_09462/retrieval.json",
+      "path": "paper_llm/results/model=qwen3.8-27b/ner-examples=10/re-examples=1/full-context=0/ner-output=indices/thinking=0/00016_2106_09462/retrieval.json",
       "sha256": "ba518bd975fde3caa95d065f5dc87883423b33a83f1280ef0cf6a7b91a33ab08"
     }
   },
@@ -112,5 +112,13 @@
   "git_commit": "e219f38f2686b712d1e4916009109ebe11f4a18e",
   "started_at": "2026-09-02T16:16:25.085636+00:00",
   "finished_at": "2026-09-02T16:33:44.597323+00:00",
-  "wall_seconds": 1039.511707
+  "wall_seconds": 1039.511707,
+  "configuration": {
+    "model": "qwen3.8:27b",
+    "ner_examples": 10,
+    "re_examples": 1,
+    "full_context": false,
+    "ner_output": "indices",
+    "thinking": false
+  }
 }
