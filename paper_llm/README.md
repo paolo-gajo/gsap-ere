@@ -41,6 +41,10 @@ covered entity labels, breaking ties by cosine similarity. For RE, where
 training-sentence pair with the same ordered entity-type signature when one is
 available. These choices and every selected example are saved in each run.
 
+A literal NER and RE prompt/completion pair from a run on John, including the
+selected ICL record IDs, is in
+[`prompt_completion_examples.md`](prompt_completion_examples.md).
+
 The selected article (`00016_2106_09462.txt`) belongs to the training split.
 It is excluded wholesale from the demonstration pool so its gold annotations
 cannot leak into prompts. Consequently this one-article Qwen3.8 run is not a

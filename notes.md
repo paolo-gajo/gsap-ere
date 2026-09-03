@@ -1,6 +1,27 @@
 # GESIS PROJECT NOTES
 
-**This is a very stimulating project, very interesting.**
+Notes taken from reading the following papers:
+
+- Bitune: Leveraging Bidirectional Attention to Improve Decoder-Only LLMs (https://aclanthology.org/2025.emnlp-main.481/)
+- Packed Levitated Marker for Entity and Relation Extraction (https://aclanthology.org/2022.acl-long.337)
+- Joint Entity and Relation Extraction with Span Pruning and Hypergraph Neural Networks (https://aclanthology.org/2023.emnlp-main.467)
+- A Frustratingly Easy Approach for Entity and Relation Extraction (https://aclanthology.org/2021.naacl-main.5)
+- GSAP-ERE: Fine-Grained Scholarly Entity and Relation Extraction Focused on Machine Learning (https://ojs.aaai.org/index.php/AAAI/article/view/40537)
+- An Autoregressive Text-to-Graph Framework for Joint Entity and Relation Extraction (https://ojs.aaai.org/index.php/AAAI/article/view/29919)
+- Span-based Joint Entity and Relation Extraction with Transformer Pre-training (http://arxiv.org/abs/1909.07755)
+- End-to-end Parsing of Procedural Text into Flow Graphs (https://aclanthology.org/2024.lrec-main.517/)
+- Aligning Actions Across Recipe Graphs (https://aclanthology.org/2021.emnlp-main.554/)
+- SURE: Mutually Visible Objects and Self-generated Candidate Labels For Relation Extraction (https://aclanthology.org/2025.coling-main.31/)
+
+Full .bib: presentation/round2_refs.bib
+
+These notes are meant for the preparation of a presentation for the second interview with GESIS.
+
+See /home/paolo/working/latex/jobhunt for information on the process.
+
+My application material to GESIS for round 1 is at: /home/paolo/working/latex/jobhunt/applications/gesis
+
+
 
 # 2026-09-01
 
