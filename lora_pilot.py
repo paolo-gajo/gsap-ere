@@ -610,10 +610,11 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
     if not getattr(model, "is_loaded_in_4bit", False):
         raise RuntimeError("model did not load in bitsandbytes 4-bit mode")
     device_map = getattr(model, "hf_device_map", None)
-    if not isinstance(device_map, dict) or any(
-        str(device).lower() in {"cpu", "disk"} for device in device_map.values()
-    ):
-        raise RuntimeError(f"unexpected quantized-model device map: {device_map!r}")
+    parameter_devices = Counter(str(parameter.device) for parameter in model.parameters())
+    if set(parameter_devices) != {"cuda:0"}:
+        raise RuntimeError(
+            f"quantized-model parameters are not all on cuda:0: {parameter_devices}"
+        )
     quantized_module_count = sum(
         isinstance(module, bnb.nn.Linear4bit) for module in model.modules()
     )
@@ -673,6 +674,7 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
             "compute_dtype": "bfloat16",
             "double_quant": True,
             "device_map": device_map,
+            "parameter_tensor_counts_by_device": dict(parameter_devices),
             "linear4bit_module_count": quantized_module_count,
             "trainable_parameter_dtypes": trainable_dtypes,
             "frozen_parameter_storage_numel_by_dtype": frozen_storage_dtypes,
