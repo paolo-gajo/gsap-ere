@@ -55,7 +55,7 @@ expected = {
     "accelerate": "1.14.0",
     "gsapere": "0.2.4",
     "huggingface_hub": "1.18.0",
-    "numpy": "2.4.2",
+    "numpy": "2.2.2",
     "peft": "0.20.0",
     "safetensors": "0.7.0",
     "sentence-transformers": "6.0.0",
