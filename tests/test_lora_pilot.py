@@ -26,6 +26,7 @@ class FakeTokenizer:
     ):
         self.chat_template_calls = getattr(self, "chat_template_calls", 0) + 1
         self.assertions = (tokenize, add_generation_prompt, enable_thinking)
+        self.messages = messages
         return f"USER:{messages[0]['content']}\nASSISTANT:<think></think>\n"
 
     def encode(self, text, *, add_special_tokens):
@@ -163,7 +164,7 @@ class LoRAPilotTests(unittest.TestCase):
             ),
         )
 
-    def test_bare_encoding_has_no_chat_wrapper(self):
+    def test_bare_base_encoding_has_no_chat_wrapper(self):
         tokenizer = FakeTokenizer()
         source = next(example for example in self.examples if example.task == "re")
         record = self.eligible[source.record_index]
@@ -190,6 +191,7 @@ class LoRAPilotTests(unittest.TestCase):
             "unused NER template",
             "unused RE template",
             bare=True,
+            model_id="Qwen/Qwen3-14B-Base",
         )
         prompt_ids = tokenizer.encode(prompt, add_special_tokens=False)
         completion_ids = tokenizer.encode(completion, add_special_tokens=False) + [
@@ -198,6 +200,66 @@ class LoRAPilotTests(unittest.TestCase):
         self.assertFalse(hasattr(tokenizer, "chat_template_calls"))
         self.assertEqual(encoded["input_ids"], prompt_ids + completion_ids)
         self.assertEqual(encoded["labels"], [-100] * len(prompt_ids) + completion_ids)
+
+    def test_bare_chat_encoding_wraps_only_x(self):
+        tokenizer = FakeTokenizer()
+        source = next(example for example in self.examples if example.task == "re")
+        record = self.eligible[source.record_index]
+        example = lora_pilot.PreparedExample(
+            sample_index=1,
+            task="re",
+            stratum=lora_pilot.example_stratum(source),
+            record_key=record.key,
+            source=source,
+        )
+        prompt = lora_pilot.bare_re_prompt(
+            record,
+            source.pair.subject,
+            source.pair.object,
+        )
+        completion = lora_pilot.gold_completion(source, self.eligible)
+        encoded = lora_pilot.encode_training_example(
+            tokenizer,
+            example,
+            self.eligible,
+            "unused NER template",
+            "unused RE template",
+            bare=True,
+            model_id=lora_pilot.MODEL_ID,
+        )
+        rendered = f"USER:{prompt}\nASSISTANT:<think></think>\n"
+        prompt_ids = tokenizer.encode(rendered, add_special_tokens=False)
+        completion_ids = tokenizer.encode(completion, add_special_tokens=False) + [
+            tokenizer.eos_token_id
+        ]
+        self.assertEqual(tokenizer.messages, [{"role": "user", "content": prompt}])
+        self.assertEqual(tokenizer.assertions, (False, True, False))
+        self.assertEqual(tokenizer.chat_template_calls, 1)
+        self.assertEqual(encoded["input_ids"], prompt_ids + completion_ids)
+        self.assertEqual(encoded["labels"], [-100] * len(prompt_ids) + completion_ids)
+
+    def test_model_prompt_wrapper_routing(self):
+        base_tokenizer = FakeTokenizer()
+        self.assertEqual(
+            lora_pilot.render_model_prompt(
+                base_tokenizer,
+                "x",
+                "Qwen/Qwen3-14B-Base",
+            ),
+            "x",
+        )
+        self.assertFalse(hasattr(base_tokenizer, "chat_template_calls"))
+
+        chat_tokenizer = FakeTokenizer()
+        self.assertEqual(
+            lora_pilot.render_model_prompt(
+                chat_tokenizer,
+                "x",
+                lora_pilot.MODEL_ID,
+            ),
+            "USER:x\nASSISTANT:<think></think>\n",
+        )
+        self.assertEqual(chat_tokenizer.messages, [{"role": "user", "content": "x"}])
 
     def test_cli_accepts_bare_and_supported_model(self):
         with patch(
@@ -243,6 +305,13 @@ class LoRAPilotTests(unittest.TestCase):
             self.assertEqual(
                 manifest["training_format"], lora_pilot.BARE_TRAINING_FORMAT
             )
+            self.assertEqual(run["training"]["model_wrapper"], "none")
+            self.assertEqual(run["evaluation"]["model_wrapper"], "none")
+            self.assertEqual(run["evaluation"]["prompt_format"], "bare x-only content")
+            self.assertEqual(run["evaluation"]["ner_shots"], 0)
+            self.assertEqual(run["evaluation"]["re_shots"], 0)
+            self.assertIsNone(run["retriever"])
+            self.assertEqual(manifest["serialization"]["model_wrapper"], "none")
             with (output_dir / "training_records.jsonl").open() as stream:
                 self.assertTrue(
                     all(
@@ -251,6 +320,104 @@ class LoRAPilotTests(unittest.TestCase):
                         for line in stream
                     )
                 )
+
+    def test_bare_evaluation_uses_only_x_and_no_retrieval(self):
+        class FakeCuda:
+            @staticmethod
+            def reset_peak_memory_stats():
+                pass
+
+            @staticmethod
+            def max_memory_allocated():
+                return 0
+
+        class FakeTorch:
+            cuda = FakeCuda()
+
+        prompts = []
+
+        def fake_generate(
+            torch,
+            model,
+            tokenizer,
+            prompt,
+            max_new_tokens,
+            model_id=lora_pilot.MODEL_ID,
+        ):
+            del torch, model, tokenizer, max_new_tokens
+            prompts.append((prompt, model_id))
+            payload = json.loads(prompt)
+            if isinstance(payload, list):
+                response = json.dumps(
+                    {
+                        "entities": [
+                            {"start": 0, "end": 0, "type": "Method"},
+                            {"start": 1, "end": 1, "type": "Method"},
+                        ]
+                    }
+                )
+            else:
+                response = '{"label":"NIL"}'
+            return response, {"input_tokens": 1, "generated_tokens": 1, "wall_seconds": 0.0}
+
+        def fake_score(command, **kwargs):
+            del kwargs
+            score_path = Path(command[command.index("--output") + 1])
+            score_path.write_text('{"scorer":{"version":"test"}}')
+
+        target = self.targets[0]
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("lora_pilot.generate_text", side_effect=fake_generate),
+                patch(
+                    "lora_pilot.select_ner_examples",
+                    side_effect=AssertionError("bare evaluation used NER retrieval"),
+                ),
+                patch(
+                    "lora_pilot.select_re_examples",
+                    side_effect=AssertionError("bare evaluation used RE retrieval"),
+                ),
+                patch("lora_pilot.scorer_python", return_value="python"),
+                patch("lora_pilot.subprocess.run", side_effect=fake_score),
+            ):
+                lora_pilot.evaluate_variant(
+                    name="bare",
+                    torch=FakeTorch(),
+                    model=object(),
+                    tokenizer=object(),
+                    targets=[target],
+                    training=self.eligible,
+                    similarities=None,
+                    pair_examples=[],
+                    pairs_by_signature={},
+                    output_dir=Path(directory),
+                    bare=True,
+                    model_id=lora_pilot.MODEL_ID,
+                )
+
+            self.assertEqual(len(prompts), 3)
+            self.assertEqual(prompts[0], (lora_pilot.bare_ner_prompt(target), lora_pilot.MODEL_ID))
+            expected_entities = [Entity(0, 0, "Method"), Entity(1, 1, "Method")]
+            self.assertEqual(
+                {prompt for prompt, _ in prompts[1:]},
+                {
+                    lora_pilot.bare_re_prompt(target, subject, object_)
+                    for subject in expected_entities
+                    for object_ in expected_entities
+                    if subject != object_
+                },
+            )
+            trace = [
+                json.loads(line)
+                for line in (Path(directory) / "bare" / "trace.jsonl").read_text().splitlines()
+            ]
+            self.assertTrue(all(row["example_keys"] == [] for row in trace))
+            retrieval = json.loads(
+                (Path(directory) / "bare" / "retrieval.json").read_text()
+            )
+            self.assertEqual(retrieval["ner_shots"], 0)
+            self.assertEqual(retrieval["re_shots"], 0)
+            self.assertIsNone(retrieval["retriever"])
 
     def test_pilot_schedule_is_400_true_batch8_updates(self):
         prepared = []

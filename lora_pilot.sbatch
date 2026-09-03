@@ -28,11 +28,13 @@ case "${model_id}" in
     model_slug=qwen38_27b
     model_class=Qwen3_5ForCausalLM
     model_revision=1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+    model_wrapper=qwen-chat-template
     ;;
   Qwen/Qwen3-14B-Base)
     model_slug=qwen3_14b_base
     model_class=Qwen3ForCausalLM
     model_revision=0b0bd3732e2c374d483664439ea334928b65f304
+    model_wrapper=none
     artifact_name="${artifact_name}_${model_slug}"
     ;;
   *) echo "error: unsupported MODEL_ID ${model_id}" >&2; exit 2 ;;
@@ -132,6 +134,7 @@ echo "training_format=${training_format}"
 echo "model_id=${model_id}"
 echo "model_class=${model_class}"
 echo "model_revision=${model_revision}"
+echo "model_wrapper=${model_wrapper}"
 echo "output=${output_dir}"
 
 resume_args=()
@@ -191,7 +194,8 @@ done
   "${training_format}" \
   "${model_id}" \
   "${model_revision}" \
-  "${model_class}" <<'PY'
+  "${model_class}" \
+  "${model_wrapper}" <<'PY'
 from collections import Counter
 import json
 import math
@@ -205,6 +209,7 @@ expected_format = sys.argv[4]
 expected_model_id = sys.argv[5]
 expected_model_revision = sys.argv[6]
 expected_model_class = sys.argv[7]
+expected_model_wrapper = sys.argv[8]
 run = json.loads((root / "run.json").read_text())
 manifest = json.loads((root / "sample_manifest.json").read_text())
 dropped = json.loads((root / "dropped_training_records.json").read_text())
@@ -221,14 +226,19 @@ assert run["training"]["bare"] == (expected_format == "bare")
 assert run["model"]["id"] == expected_model_id
 assert run["model"]["revision"] == expected_model_revision
 assert run["model"]["class"] == expected_model_class
+assert run["training"]["model_wrapper"] == expected_model_wrapper
+assert run["evaluation"]["model_wrapper"] == expected_model_wrapper
 assert manifest["training_regime"] == regime
 assert manifest["training_format"] == expected_format
+assert manifest["serialization"]["model_wrapper"] == expected_model_wrapper
 assert manifest["excluded_document_id"] == run["target"]["document_id"]
 assert training["training_regime"] == regime
 assert training["training_format"] == expected_format
 assert training["model_id"] == expected_model_id
 assert training["model_revision"] == expected_model_revision
 assert tokenization["training_format"] == expected_format
+assert tokenization["model_wrapper"] == expected_model_wrapper
+assert training["model_wrapper"] == expected_model_wrapper
 assert training["learning_rate"] == 2e-4
 assert training["warmup_steps"] == 5
 assert training["micro_batch_size"] == 8
@@ -251,6 +261,43 @@ assert targets["quantization"]["linear4bit_module_count"] > 0
 assert targets["quantization"]["trainable_parameter_dtypes"] == {
     "torch.float32": targets["trainable_parameter_count"]
 }
+
+for variant in ("base", "lora"):
+    retrieval = json.loads((root / variant / "retrieval.json").read_text())
+    trace = [
+        json.loads(line)
+        for line in (root / variant / "trace.jsonl").read_text().splitlines()
+    ]
+    if expected_format == "bare":
+        assert run["evaluation"]["prompt_format"] == "bare x-only content"
+        assert run["evaluation"]["ner_shots"] == 0
+        assert run["evaluation"]["re_shots"] == 0
+        assert run["retriever"] is None
+        assert retrieval["retriever"] is None
+        assert retrieval["retriever_revision"] is None
+        assert retrieval["ner_shots"] == 0
+        assert retrieval["re_shots"] == 0
+        assert retrieval["pool_size"] == 0
+        assert all(not row["examples"] for row in retrieval["ner"])
+        assert all(not row["examples"] for row in retrieval["re"])
+        assert all(not row["example_keys"] for row in trace)
+        for row in trace:
+            prompt = json.loads(row["prompt"])
+            if row["stage"] == "ner":
+                assert isinstance(prompt, list)
+                assert all(
+                    isinstance(token, list)
+                    and len(token) == 2
+                    and isinstance(token[0], int)
+                    and isinstance(token[1], str)
+                    for token in prompt
+                )
+            else:
+                assert row["stage"] == "re"
+                assert set(prompt) == {"sentence_tokens", "subject", "object"}
+    else:
+        assert retrieval["ner_shots"] == 10
+        assert retrieval["re_shots"] == 1
 
 schedule = [json.loads(line) for line in (root / "training_schedule.jsonl").open()]
 presentations = Counter(

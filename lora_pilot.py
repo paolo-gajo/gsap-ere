@@ -52,6 +52,7 @@ MODEL_REVISIONS = {
     MODEL_ID: "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
     "Qwen/Qwen3-14B-Base": "0b0bd3732e2c374d483664439ea334928b65f304",
 }
+CHAT_TEMPLATE_MODELS = frozenset({MODEL_ID})
 MODEL_REVISION = MODEL_REVISIONS[MODEL_ID]
 RETRIEVER_ID = DEFAULT_RETRIEVER
 RETRIEVER_REVISION = "d51b22a1dfa8184e9258074e56e2875e50612dca"
@@ -340,6 +341,18 @@ def gold_completion(example: PilotExample, eligible: list[SentenceRecord]) -> st
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def bare_ner_prompt(record: SentenceRecord) -> str:
+    return json.dumps(indexed_tokens(record), ensure_ascii=False)
+
+
+def bare_re_prompt(
+    record: SentenceRecord,
+    subject: Entity,
+    object_: Entity,
+) -> str:
+    return json.dumps(pair_input(record, subject, object_), ensure_ascii=False)
+
+
 def training_prompt(
     example: PilotExample,
     eligible: list[SentenceRecord],
@@ -350,16 +363,15 @@ def training_prompt(
     record = eligible[example.record_index]
     if bare:
         if example.task == "ner":
-            value: Any = indexed_tokens(record)
+            return bare_ner_prompt(record)
         elif example.task == "re" and example.pair is not None:
-            value = pair_input(
+            return bare_re_prompt(
                 record,
                 example.pair.subject,
                 example.pair.object,
             )
         else:
             raise AssertionError(f"invalid pilot example: {example}")
-        return json.dumps(value, ensure_ascii=False)
     if example.task == "ner":
         return build_ner_prompt(record, [], ner_template, output_format="indices")
     if example.task == "re" and example.pair is not None:
@@ -380,9 +392,10 @@ def prepare_training_material(
     seed: int,
     regime: str,
     bare: bool,
+    model_id: str,
 ) -> list[PreparedExample]:
-    ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
-    re_template = RE_TEMPLATE.read_text(encoding="utf-8")
+    ner_template = "" if bare else NER_TEMPLATE.read_text(encoding="utf-8")
+    re_template = "" if bare else RE_TEMPLATE.read_text(encoding="utf-8")
     prepared: list[PreparedExample] = []
     task_counts: Counter[str] = Counter()
     stratum_counts: Counter[str] = Counter()
@@ -448,9 +461,14 @@ def prepare_training_material(
             ),
             "serialization": {
                 "prompt": (
-                    "raw JSON x only, with no chat wrapper or separator"
+                    "raw JSON x as the only message content"
                     if bare
-                    else "zero-shot instruction template inside the Qwen chat wrapper"
+                    else "zero-shot task-instruction content"
+                ),
+                "model_wrapper": (
+                    "qwen-chat-template"
+                    if model_id in CHAT_TEMPLATE_MODELS
+                    else "none"
                 ),
                 "completion": "compact gold JSON followed by EOS",
                 "supervision": "completion tokens only",
@@ -485,10 +503,10 @@ def prepare_training_material(
                 "train_data_sha256": sha256_file(TRAIN_DATA),
                 "vocabulary": str(VOCABULARY),
                 "vocabulary_sha256": sha256_file(VOCABULARY),
-                "ner_template": str(NER_TEMPLATE),
-                "ner_template_sha256": sha256_file(NER_TEMPLATE),
-                "re_template": str(RE_TEMPLATE),
-                "re_template_sha256": sha256_file(RE_TEMPLATE),
+                "ner_template": None if bare else str(NER_TEMPLATE),
+                "ner_template_sha256": None if bare else sha256_file(NER_TEMPLATE),
+                "re_template": None if bare else str(RE_TEMPLATE),
+                "re_template_sha256": None if bare else sha256_file(RE_TEMPLATE),
             },
             "record_manifest": "training_records.jsonl",
         },
@@ -505,6 +523,14 @@ def chat_prompt(tokenizer: Any, prompt: str) -> str:
     )
 
 
+def render_model_prompt(tokenizer: Any, prompt: str, model_id: str) -> str:
+    if model_id not in MODEL_REVISIONS:
+        raise ValueError(f"unsupported model: {model_id}")
+    if model_id in CHAT_TEMPLATE_MODELS:
+        return chat_prompt(tokenizer, prompt)
+    return prompt
+
+
 def encode_training_example(
     tokenizer: Any,
     example: PreparedExample,
@@ -512,6 +538,7 @@ def encode_training_example(
     ner_template: str,
     re_template: str,
     bare: bool = False,
+    model_id: str = MODEL_ID,
 ) -> dict[str, Any]:
     prompt = training_prompt(
         example.source,
@@ -521,7 +548,7 @@ def encode_training_example(
         bare=bare,
     )
     completion = gold_completion(example.source, eligible)
-    rendered_prompt = prompt if bare else chat_prompt(tokenizer, prompt)
+    rendered_prompt = render_model_prompt(tokenizer, prompt, model_id)
     prompt_ids = tokenizer.encode(rendered_prompt, add_special_tokens=False)
     completion_ids = tokenizer.encode(completion, add_special_tokens=False)
     eos_token_id = tokenizer.eos_token_id
@@ -916,6 +943,7 @@ def encode_training_batch(
     ner_template: str,
     re_template: str,
     bare: bool = False,
+    model_id: str = MODEL_ID,
 ) -> list[dict[str, Any]]:
     return [
         encode_training_example(
@@ -925,6 +953,7 @@ def encode_training_batch(
             ner_template,
             re_template,
             bare=bare,
+            model_id=model_id,
         )
         for row in batch.rows
     ]
@@ -938,6 +967,7 @@ def preflight_training_schedule(
     ner_template: str,
     re_template: str,
     bare: bool,
+    model_id: str,
 ) -> TrainingBatch:
     seen: set[int] = set()
     token_lengths: list[int] = []
@@ -956,6 +986,7 @@ def preflight_training_schedule(
                 ner_template,
                 re_template,
                 bare=bare,
+                model_id=model_id,
             )
             lengths = [len(row["input_ids"]) for row in encoded]
             padded_tokens = max(lengths)
@@ -1020,6 +1051,11 @@ def preflight_training_schedule(
         {
             "training_format": (
                 BARE_TRAINING_FORMAT if bare else TEMPLATED_TRAINING_FORMAT
+            ),
+            "model_wrapper": (
+                "qwen-chat-template"
+                if model_id in CHAT_TEMPLATE_MODELS
+                else "none"
             ),
             "maximum_allowed_tokens": MAX_TRAIN_TOKENS,
             "unique_records": len(token_lengths),
@@ -1148,8 +1184,8 @@ def train_adapter(
 ) -> dict[str, Any]:
     from transformers import get_linear_schedule_with_warmup
 
-    ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
-    re_template = RE_TEMPLATE.read_text(encoding="utf-8")
+    ner_template = "" if bare else NER_TEMPLATE.read_text(encoding="utf-8")
+    re_template = "" if bare else RE_TEMPLATE.read_text(encoding="utf-8")
     training_format = BARE_TRAINING_FORMAT if bare else TEMPLATED_TRAINING_FORMAT
     schedule = build_training_schedule(prepared, seed, regime)
     widest = preflight_training_schedule(
@@ -1160,6 +1196,7 @@ def train_adapter(
         ner_template,
         re_template,
         bare,
+        model_id,
     )
     schedule_sha256 = sha256_file(output_dir / "training_schedule.jsonl")
     total_steps = len(schedule)
@@ -1210,6 +1247,7 @@ def train_adapter(
         ner_template,
         re_template,
         bare=bare,
+        model_id=model_id,
     )
     smoke_batch = tensor_batch(torch, widest_encoded, device, pad_token_id)
     parameter_snapshot = [parameter.detach().cpu().clone() for parameter in parameters]
@@ -1377,6 +1415,7 @@ def train_adapter(
                 ner_template,
                 re_template,
                 bare=bare,
+                model_id=model_id,
             )
             batch = tensor_batch(torch, encoded, device, pad_token_id)
             learning_rate = float(optimizer.param_groups[0]["lr"])
@@ -1471,6 +1510,9 @@ def train_adapter(
         "optimizer": "torch.optim.AdamW(fused=True)",
         "training_regime": regime,
         "training_format": training_format,
+        "model_wrapper": (
+            "qwen-chat-template" if model_id in CHAT_TEMPLATE_MODELS else "none"
+        ),
         "model_id": model_id,
         "model_revision": model_revision,
         "optimizer_steps": len(step_rows),
@@ -1551,8 +1593,9 @@ def generate_text(
     tokenizer: Any,
     prompt: str,
     max_new_tokens: int,
+    model_id: str = MODEL_ID,
 ) -> tuple[str, dict[str, Any]]:
-    rendered = chat_prompt(tokenizer, prompt)
+    rendered = render_model_prompt(tokenizer, prompt, model_id)
     inputs = tokenizer(rendered, return_tensors="pt", add_special_tokens=False)
     device = next(model.parameters()).device
     inputs = {name: tensor.to(device) for name, tensor in inputs.items()}
@@ -1631,29 +1674,46 @@ def evaluate_variant(
     pair_examples: list[PairExample],
     pairs_by_signature: dict[tuple[str, str], list[int]],
     output_dir: Path,
+    bare: bool,
+    model_id: str,
 ) -> dict[str, Any]:
     variant_dir = output_dir / name
     variant_dir.mkdir(parents=True, exist_ok=False)
     trace_path = variant_dir / "trace.jsonl"
-    ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
-    re_template = RE_TEMPLATE.read_text(encoding="utf-8")
+    ner_template = "" if bare else NER_TEMPLATE.read_text(encoding="utf-8")
+    re_template = "" if bare else RE_TEMPLATE.read_text(encoding="utf-8")
     predictions_by_sentence: list[list[Entity]] = []
     ner_retrieval = []
     warning_count = 0
     torch.cuda.reset_peak_memory_stats()
 
     for target_index, target in enumerate(targets):
-        selected_indices = select_ner_examples(
-            training,
-            similarities[target_index],
-            NER_SHOTS,
-            RETRIEVAL_POOL_SIZE,
-        )
-        examples = [training[index] for index in selected_indices]
-        prompt = build_ner_prompt(target, examples, ner_template, output_format="indices")
+        if bare:
+            selected_indices: list[int] = []
+            examples: list[SentenceRecord] = []
+            prompt = bare_ner_prompt(target)
+        else:
+            selected_indices = select_ner_examples(
+                training,
+                similarities[target_index],
+                NER_SHOTS,
+                RETRIEVAL_POOL_SIZE,
+            )
+            examples = [training[index] for index in selected_indices]
+            prompt = build_ner_prompt(
+                target,
+                examples,
+                ner_template,
+                output_format="indices",
+            )
         print(f"[{name} NER {target_index + 1}/{len(targets)}] {target.key}", flush=True)
         raw, generation = generate_text(
-            torch, model, tokenizer, prompt, NER_MAX_NEW_TOKENS
+            torch,
+            model,
+            tokenizer,
+            prompt,
+            NER_MAX_NEW_TOKENS,
+            model_id=model_id,
         )
         payload, parse_error = parse_generated_json(raw)
         predicted, warnings = sanitize_ner(payload, len(target.tokens))
@@ -1704,33 +1764,43 @@ def evaluate_variant(
                 if subject_index == object_index:
                     continue
                 pair_number += 1
-                examples = select_re_examples(
-                    subject,
-                    object_,
-                    pair_examples,
-                    pairs_by_signature,
-                    training,
-                    similarities[target_index],
-                    RE_SHOTS,
-                    RETRIEVAL_POOL_SIZE,
-                )
-                prompt_examples = [
-                    (training[example.record_index], example) for example in examples
-                ]
-                prompt = build_re_prompt(
-                    target,
-                    subject,
-                    object_,
-                    prompt_examples,
-                    re_template,
-                )
+                if bare:
+                    examples: list[PairExample] = []
+                    prompt_examples: list[tuple[SentenceRecord, PairExample]] = []
+                    prompt = bare_re_prompt(target, subject, object_)
+                else:
+                    examples = select_re_examples(
+                        subject,
+                        object_,
+                        pair_examples,
+                        pairs_by_signature,
+                        training,
+                        similarities[target_index],
+                        RE_SHOTS,
+                        RETRIEVAL_POOL_SIZE,
+                    )
+                    prompt_examples = [
+                        (training[example.record_index], example) for example in examples
+                    ]
+                    prompt = build_re_prompt(
+                        target,
+                        subject,
+                        object_,
+                        prompt_examples,
+                        re_template,
+                    )
                 print(
                     f"[{name} RE {pair_number}/{total_pairs}] {target.key} "
                     f"{subject_index}->{object_index}",
                     flush=True,
                 )
                 raw, generation = generate_text(
-                    torch, model, tokenizer, prompt, RE_MAX_NEW_TOKENS
+                    torch,
+                    model,
+                    tokenizer,
+                    prompt,
+                    RE_MAX_NEW_TOKENS,
+                    model_id=model_id,
                 )
                 payload, parse_error = parse_generated_json(raw)
                 label, warnings = sanitize_re(payload)
@@ -1788,13 +1858,17 @@ def evaluate_variant(
         variant_dir / "retrieval.json",
         {
             "schema_version": 1,
-            "retriever": RETRIEVER_ID,
-            "retriever_revision": RETRIEVER_REVISION,
+            "retriever": None if bare else RETRIEVER_ID,
+            "retriever_revision": None if bare else RETRIEVER_REVISION,
             "excluded_document_id": TARGET_DOCUMENT_ID,
-            "selection": "reconstructed similar+diverse",
-            "ner_shots": NER_SHOTS,
-            "re_shots": RE_SHOTS,
-            "pool_size": RETRIEVAL_POOL_SIZE,
+            "selection": (
+                "none; bare x-only evaluation"
+                if bare
+                else "reconstructed similar+diverse"
+            ),
+            "ner_shots": 0 if bare else NER_SHOTS,
+            "re_shots": 0 if bare else RE_SHOTS,
+            "pool_size": 0 if bare else RETRIEVAL_POOL_SIZE,
             "ner": ner_retrieval,
             "re": re_retrieval,
         },
@@ -1878,7 +1952,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bare",
         action="store_true",
-        help="train on raw task input x followed directly by the gold completion",
+        help=(
+            "train and evaluate with x as the only prompt content and JSON y "
+            "as the completion"
+        ),
     )
     parser.add_argument(
         "--prepare-only",
@@ -1908,6 +1985,7 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         args.seed,
         args.training_regime,
         args.bare,
+        args.model_id,
     )
     planned_schedule = build_training_schedule(
         prepared, args.seed, args.training_regime
@@ -1968,6 +2046,11 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         "training": {
             "format": training_format,
             "bare": args.bare,
+            "model_wrapper": (
+                "qwen-chat-template"
+                if args.model_id in CHAT_TEMPLATE_MODELS
+                else "none"
+            ),
             "optimizer_steps": len(planned_schedule),
             "task_steps": planned_task_steps,
             "selected_training_records": len(prepared),
@@ -2040,24 +2123,41 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             },
         },
         "evaluation": {
-            "prompt_format": "unchanged few-shot chat prompts",
+            "prompt_format": (
+                "bare x-only content"
+                if args.bare
+                else "few-shot task-instruction content"
+            ),
+            "model_wrapper": (
+                "qwen-chat-template"
+                if args.model_id in CHAT_TEMPLATE_MODELS
+                else "none"
+            ),
             "base_variant": "the same 4-bit quantized base with the LoRA adapter disabled",
             "target_sentence_count": len(targets),
-            "ner_shots": NER_SHOTS,
-            "re_shots": RE_SHOTS,
+            "ner_shots": 0 if args.bare else NER_SHOTS,
+            "re_shots": 0 if args.bare else RE_SHOTS,
             "full_article_context": False,
             "thinking": False,
             "generation": "greedy Hugging Face generation without an Ollama JSON grammar",
             "parsing": "whole-response JSON with one optional outer Markdown JSON fence, followed by paper_llm sanitizers",
             "relation_candidates": "all ordered pairs of each system's predicted entities",
         },
-        "retriever": {"id": RETRIEVER_ID, "revision": RETRIEVER_REVISION},
+        "retriever": (
+            None
+            if args.bare
+            else {"id": RETRIEVER_ID, "revision": RETRIEVER_REVISION}
+        ),
         "inputs": {
             "eligible_sentence_count": len(eligible),
             "train_data_sha256": sha256_file(TRAIN_DATA),
             "vocabulary_sha256": sha256_file(VOCABULARY),
-            "ner_template_sha256": sha256_file(NER_TEMPLATE),
-            "re_template_sha256": sha256_file(RE_TEMPLATE),
+            "ner_template_sha256": (
+                None if args.bare else sha256_file(NER_TEMPLATE)
+            ),
+            "re_template_sha256": (
+                None if args.bare else sha256_file(RE_TEMPLATE)
+            ),
             "script_sha256": sha256_file(Path(__file__)),
         },
         "git_commit": git_commit(),
@@ -2099,8 +2199,13 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
     model.config.use_cache = True
     model.eval()
 
-    similarities = compute_similarities(eligible, targets)
-    pair_examples, pairs_by_signature = build_pair_examples(eligible)
+    if args.bare:
+        similarities = None
+        pair_examples = []
+        pairs_by_signature = {}
+    else:
+        similarities = compute_similarities(eligible, targets)
+        pair_examples, pairs_by_signature = build_pair_examples(eligible)
 
     with model.disable_adapter():
         base_result = evaluate_variant(
@@ -2114,6 +2219,8 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             pair_examples=pair_examples,
             pairs_by_signature=pairs_by_signature,
             output_dir=output_dir,
+            bare=args.bare,
+            model_id=args.model_id,
         )
     lora_result = evaluate_variant(
         name="lora",
@@ -2126,6 +2233,8 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         pair_examples=pair_examples,
         pairs_by_signature=pairs_by_signature,
         output_dir=output_dir,
+        bare=args.bare,
+        model_id=args.model_id,
     )
     comparison_result = comparison(base_result, lora_result)
     write_json(output_dir / "comparison.json", comparison_result)
