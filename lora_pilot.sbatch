@@ -16,10 +16,31 @@ set -euo pipefail
 repo_root="${SLURM_SUBMIT_DIR:?submit this job from the repository root}"
 expected_commit="${CAMPAIGN_COMMIT:?export the exact pilot commit as CAMPAIGN_COMMIT}"
 training_regime="${TRAINING_REGIME:-pilot}"
+model_id="${MODEL_ID:-Qwen/Qwen3.8-27B}"
+bare="${BARE:-0}"
 case "${training_regime}" in
   pilot) artifact_name=lora_pilot ;;
   full-pass) artifact_name=lora_full_pass ;;
   *) echo "error: unknown TRAINING_REGIME ${training_regime}" >&2; exit 2 ;;
+esac
+case "${model_id}" in
+  Qwen/Qwen3.8-27B)
+    model_slug=qwen38_27b
+    model_class=Qwen3_5ForCausalLM
+    model_revision=1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+    ;;
+  Qwen/Qwen3-14B-Base)
+    model_slug=qwen3_14b_base
+    model_class=Qwen3ForCausalLM
+    model_revision=0b0bd3732e2c374d483664439ea334928b65f304
+    artifact_name="${artifact_name}_${model_slug}"
+    ;;
+  *) echo "error: unsupported MODEL_ID ${model_id}" >&2; exit 2 ;;
+esac
+case "${bare}" in
+  0) training_format=templated-chat ;;
+  1) training_format=bare; artifact_name="${artifact_name}_bare" ;;
+  *) echo "error: BARE must be 0 or 1" >&2; exit 2 ;;
 esac
 artifact_root="/project/def-hsajjad/pgajo/gsap-ere_artifacts/${artifact_name}"
 output_dir="${OUTPUT_DIR:-${artifact_root}/${expected_commit}-job-${SLURM_JOB_ID}}"
@@ -107,9 +128,17 @@ mkdir -p "$(dirname -- "${output_dir}")"
 echo "commit=${actual_commit}"
 echo "gpu=${gpu_names}"
 echo "training_regime=${training_regime}"
+echo "training_format=${training_format}"
+echo "model_id=${model_id}"
+echo "model_class=${model_class}"
+echo "model_revision=${model_revision}"
 echo "output=${output_dir}"
 
 resume_args=()
+bare_args=()
+if [[ "${bare}" == 1 ]]; then
+  bare_args=(--bare)
+fi
 if [[ -n "${RESUME_FROM:-}" ]]; then
   if [[ "${training_regime}" != full-pass ]]; then
     echo "error: RESUME_FROM is only valid for full-pass training" >&2
@@ -121,7 +150,9 @@ fi
 
 srun --ntasks=1 "${venv_python}" -u lora_pilot.py \
   --seed 42 \
+  --model-id "${model_id}" \
   --training-regime "${training_regime}" \
+  "${bare_args[@]}" \
   "${resume_args[@]}" \
   --output-dir "${output_dir}"
 
@@ -153,7 +184,14 @@ for artifact in \
   fi
 done
 
-"${venv_python}" - "${output_dir}" "${training_regime}" "${actual_commit}" <<'PY'
+"${venv_python}" - \
+  "${output_dir}" \
+  "${training_regime}" \
+  "${actual_commit}" \
+  "${training_format}" \
+  "${model_id}" \
+  "${model_revision}" \
+  "${model_class}" <<'PY'
 from collections import Counter
 import json
 import math
@@ -163,18 +201,34 @@ from pathlib import Path
 root = Path(sys.argv[1])
 regime = sys.argv[2]
 expected_commit = sys.argv[3]
+expected_format = sys.argv[4]
+expected_model_id = sys.argv[5]
+expected_model_revision = sys.argv[6]
+expected_model_class = sys.argv[7]
 run = json.loads((root / "run.json").read_text())
 manifest = json.loads((root / "sample_manifest.json").read_text())
 dropped = json.loads((root / "dropped_training_records.json").read_text())
 training = json.loads((root / "training_metrics.json").read_text())
 targets = json.loads((root / "targeted_modules.json").read_text())
 comparison = json.loads((root / "comparison.json").read_text())
+tokenization = json.loads((root / "tokenization.json").read_text())
 assert run["status"] == "complete"
 assert run["git_commit"] == expected_commit
 assert run["training_regime"] == regime
+assert run["training_format"] == expected_format
+assert run["training"]["format"] == expected_format
+assert run["training"]["bare"] == (expected_format == "bare")
+assert run["model"]["id"] == expected_model_id
+assert run["model"]["revision"] == expected_model_revision
+assert run["model"]["class"] == expected_model_class
 assert manifest["training_regime"] == regime
+assert manifest["training_format"] == expected_format
 assert manifest["excluded_document_id"] == run["target"]["document_id"]
 assert training["training_regime"] == regime
+assert training["training_format"] == expected_format
+assert training["model_id"] == expected_model_id
+assert training["model_revision"] == expected_model_revision
+assert tokenization["training_format"] == expected_format
 assert training["learning_rate"] == 2e-4
 assert training["warmup_steps"] == 5
 assert training["micro_batch_size"] == 8
@@ -190,6 +244,9 @@ assert run["model"]["quantization"] == {
 }
 assert run["software"]["bitsandbytes"] == "0.50.1+computecanada"
 assert targets["quantization"]["backend"] == "bitsandbytes"
+assert targets["model_id"] == expected_model_id
+assert targets["model_revision"] == expected_model_revision
+assert targets["model_class"] == expected_model_class
 assert targets["quantization"]["linear4bit_module_count"] > 0
 assert targets["quantization"]["trainable_parameter_dtypes"] == {
     "torch.float32": targets["trainable_parameter_count"]
@@ -208,6 +265,7 @@ with (root / "training_records.jsonl").open() as stream:
     for line in stream:
         row = json.loads(line)
         assert row["document_id"] != run["target"]["document_id"]
+        assert row["training_format"] == expected_format
         training_record_count += 1
 tokenization_record_count = sum(1 for _ in (root / "tokenization_records.jsonl").open())
 training_log_count = sum(1 for _ in (root / "training_log.jsonl").open())

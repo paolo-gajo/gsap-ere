@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the fixed Qwen3.8-27B GSAP-ERE LoRA experiments."""
+"""Run the fixed Qwen GSAP-ERE LoRA experiments."""
 
 from __future__ import annotations
 
@@ -36,7 +36,9 @@ from paper_llm.inference import (
     build_re_prompt,
     entity_dict,
     gpu_inventory,
+    indexed_tokens,
     load_records,
+    pair_input,
     sanitize_ner,
     sanitize_re,
     select_ner_examples,
@@ -46,7 +48,11 @@ from paper_llm.inference import (
 
 
 MODEL_ID = "Qwen/Qwen3.8-27B"
-MODEL_REVISION = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+MODEL_REVISIONS = {
+    MODEL_ID: "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+    "Qwen/Qwen3-14B-Base": "0b0bd3732e2c374d483664439ea334928b65f304",
+}
+MODEL_REVISION = MODEL_REVISIONS[MODEL_ID]
 RETRIEVER_ID = DEFAULT_RETRIEVER
 RETRIEVER_REVISION = "d51b22a1dfa8184e9258074e56e2875e50612dca"
 TARGET_DOCUMENT_ID = DEFAULT_DOCUMENT_ID
@@ -55,6 +61,8 @@ DEFAULT_SEED = 42
 PILOT_REGIME = "pilot"
 FULL_PASS_REGIME = "full-pass"
 TRAINING_REGIMES = (PILOT_REGIME, FULL_PASS_REGIME)
+TEMPLATED_TRAINING_FORMAT = "templated-chat"
+BARE_TRAINING_FORMAT = "bare"
 NER_SAMPLE_COUNT = 100
 RE_POSITIVE_SAMPLE_COUNT = 50
 RE_NIL_SAMPLE_COUNT = 50
@@ -141,9 +149,10 @@ def package_version(name: str) -> str | None:
         return None
 
 
-def qlora_signature() -> dict[str, Any]:
+def qlora_signature(model_id: str, model_revision: str) -> dict[str, Any]:
     return {
-        "model_revision": MODEL_REVISION,
+        "model_id": model_id,
+        "model_revision": model_revision,
         "backend": "bitsandbytes",
         "bitsandbytes_version": package_version("bitsandbytes"),
         "bits": 4,
@@ -336,8 +345,21 @@ def training_prompt(
     eligible: list[SentenceRecord],
     ner_template: str,
     re_template: str,
+    bare: bool = False,
 ) -> str:
     record = eligible[example.record_index]
+    if bare:
+        if example.task == "ner":
+            value: Any = indexed_tokens(record)
+        elif example.task == "re" and example.pair is not None:
+            value = pair_input(
+                record,
+                example.pair.subject,
+                example.pair.object,
+            )
+        else:
+            raise AssertionError(f"invalid pilot example: {example}")
+        return json.dumps(value, ensure_ascii=False)
     if example.task == "ner":
         return build_ner_prompt(record, [], ner_template, output_format="indices")
     if example.task == "re" and example.pair is not None:
@@ -357,6 +379,7 @@ def prepare_training_material(
     output_dir: Path,
     seed: int,
     regime: str,
+    bare: bool,
 ) -> list[PreparedExample]:
     ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
     re_template = RE_TEMPLATE.read_text(encoding="utf-8")
@@ -369,7 +392,13 @@ def prepare_training_material(
             record = eligible[example.record_index]
             if record.doc_id == TARGET_DOCUMENT_ID:
                 raise AssertionError("target document leaked into training material")
-            prompt = training_prompt(example, eligible, ner_template, re_template)
+            prompt = training_prompt(
+                example,
+                eligible,
+                ner_template,
+                re_template,
+                bare=bare,
+            )
             completion = gold_completion(example, eligible)
             parsed_completion = json.loads(completion)
             stratum = example_stratum(example)
@@ -387,6 +416,9 @@ def prepare_training_material(
                 "sample_index": sample_index,
                 "task": example.task,
                 "stratum": stratum,
+                "training_format": (
+                    BARE_TRAINING_FORMAT if bare else TEMPLATED_TRAINING_FORMAT
+                ),
                 "document_id": record.doc_id,
                 "sentence_id": record.sentence_id,
                 "record_key": record.key,
@@ -411,6 +443,18 @@ def prepare_training_material(
             "schema_version": 1,
             "seed": seed,
             "training_regime": regime,
+            "training_format": (
+                BARE_TRAINING_FORMAT if bare else TEMPLATED_TRAINING_FORMAT
+            ),
+            "serialization": {
+                "prompt": (
+                    "raw JSON x only, with no chat wrapper or separator"
+                    if bare
+                    else "zero-shot instruction template inside the Qwen chat wrapper"
+                ),
+                "completion": "compact gold JSON followed by EOS",
+                "supervision": "completion tokens only",
+            },
             "excluded_document_id": TARGET_DOCUMENT_ID,
             "selection": (
                 {
@@ -467,10 +511,17 @@ def encode_training_example(
     eligible: list[SentenceRecord],
     ner_template: str,
     re_template: str,
+    bare: bool = False,
 ) -> dict[str, Any]:
-    prompt = training_prompt(example.source, eligible, ner_template, re_template)
+    prompt = training_prompt(
+        example.source,
+        eligible,
+        ner_template,
+        re_template,
+        bare=bare,
+    )
     completion = gold_completion(example.source, eligible)
-    rendered_prompt = chat_prompt(tokenizer, prompt)
+    rendered_prompt = prompt if bare else chat_prompt(tokenizer, prompt)
     prompt_ids = tokenizer.encode(rendered_prompt, add_special_tokens=False)
     completion_ids = tokenizer.encode(completion, add_special_tokens=False)
     eos_token_id = tokenizer.eos_token_id
@@ -544,7 +595,11 @@ def require_h100(torch: Any) -> dict[str, Any]:
     }
 
 
-def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
+def load_model_and_tokenizer(
+    seed: int,
+    model_id: str,
+    model_revision: str,
+) -> tuple[Any, Any, Any, dict[str, Any]]:
     try:
         import bitsandbytes as bnb
         import torch
@@ -554,7 +609,12 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
             get_peft_model,
             prepare_model_for_kbit_training,
         )
-        from transformers import AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForCausalLM
+        from transformers import (
+            AutoTokenizer,
+            BitsAndBytesConfig,
+            Qwen3ForCausalLM,
+            Qwen3_5ForCausalLM,
+        )
     except ImportError as error:
         raise RuntimeError(
             "torch, transformers, peft, and bitsandbytes are required"
@@ -567,8 +627,8 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
     torch.backends.cuda.matmul.allow_tf32 = True
 
     tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_ID,
-        revision=MODEL_REVISION,
+        model_id,
+        revision=model_revision,
         trust_remote_code=False,
     )
     if tokenizer.pad_token_id is None:
@@ -581,9 +641,14 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
         bnb_4bit_compute_dtype=torch.bfloat16,
         bnb_4bit_use_double_quant=True,
     )
-    model = Qwen3_5ForCausalLM.from_pretrained(
-        MODEL_ID,
-        revision=MODEL_REVISION,
+    model_class = (
+        Qwen3ForCausalLM
+        if model_id == "Qwen/Qwen3-14B-Base"
+        else Qwen3_5ForCausalLM
+    )
+    model = model_class.from_pretrained(
+        model_id,
+        revision=model_revision,
         dtype=torch.bfloat16,
         quantization_config=quantization_config,
         device_map={"": 0},
@@ -605,7 +670,7 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
         target_modules="all-linear",
         bias="none",
     )
-    model = get_peft_model(model, lora_config, revision=MODEL_REVISION)
+    model = get_peft_model(model, lora_config, revision=model_revision)
 
     if not getattr(model, "is_loaded_in_4bit", False):
         raise RuntimeError("model did not load in bitsandbytes 4-bit mode")
@@ -659,6 +724,9 @@ def load_model_and_tokenizer(seed: int) -> tuple[Any, Any, Any, dict[str, Any]]:
             frozen_storage_dtypes.get(dtype, 0) + parameter.numel()
         )
     target_report = {
+        "model_id": model_id,
+        "model_revision": model_revision,
+        "model_class": model_class.__name__,
         "selector": "all-linear",
         "peft_semantics": "all supported linear modules, including bitsandbytes Linear4bit, except the output head",
         "module_count": len(targeted_modules),
@@ -847,10 +915,16 @@ def encode_training_batch(
     eligible: list[SentenceRecord],
     ner_template: str,
     re_template: str,
+    bare: bool = False,
 ) -> list[dict[str, Any]]:
     return [
         encode_training_example(
-            tokenizer, row, eligible, ner_template, re_template
+            tokenizer,
+            row,
+            eligible,
+            ner_template,
+            re_template,
+            bare=bare,
         )
         for row in batch.rows
     ]
@@ -863,6 +937,7 @@ def preflight_training_schedule(
     output_dir: Path,
     ner_template: str,
     re_template: str,
+    bare: bool,
 ) -> TrainingBatch:
     seen: set[int] = set()
     token_lengths: list[int] = []
@@ -875,7 +950,12 @@ def preflight_training_schedule(
     ) as tokenization_stream:
         for batch in schedule:
             encoded = encode_training_batch(
-                tokenizer, batch, eligible, ner_template, re_template
+                tokenizer,
+                batch,
+                eligible,
+                ner_template,
+                re_template,
+                bare=bare,
             )
             lengths = [len(row["input_ids"]) for row in encoded]
             padded_tokens = max(lengths)
@@ -938,6 +1018,9 @@ def preflight_training_schedule(
     write_json(
         output_dir / "tokenization.json",
         {
+            "training_format": (
+                BARE_TRAINING_FORMAT if bare else TEMPLATED_TRAINING_FORMAT
+            ),
             "maximum_allowed_tokens": MAX_TRAIN_TOKENS,
             "unique_records": len(token_lengths),
             "minimum_tokens": min(token_lengths),
@@ -983,6 +1066,9 @@ def save_training_checkpoint(
     scheduler: Any,
     output_dir: Path,
     regime: str,
+    training_format: str,
+    model_id: str,
+    model_revision: str,
     schedule_sha256: str,
     completed_steps: int,
     step_rows: list[dict[str, Any]],
@@ -1000,9 +1086,10 @@ def save_training_checkpoint(
     trainer_state = {
         "completed_steps": completed_steps,
         "training_regime": regime,
+        "training_format": training_format,
         "schedule_sha256": schedule_sha256,
         "git_commit": git_commit(),
-        "qlora_signature": qlora_signature(),
+        "qlora_signature": qlora_signature(model_id, model_revision),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
         "python_random_state": random.getstate(),
@@ -1021,9 +1108,10 @@ def save_training_checkpoint(
         {
             "completed_steps": completed_steps,
             "training_regime": regime,
+            "training_format": training_format,
             "schedule_sha256": schedule_sha256,
             "git_commit": git_commit(),
-            "qlora_signature": qlora_signature(),
+            "qlora_signature": qlora_signature(model_id, model_revision),
             "saved_at": utc_now(),
         },
     )
@@ -1054,11 +1142,15 @@ def train_adapter(
     pad_token_id: int,
     regime: str,
     resume_from: Path | None,
+    bare: bool,
+    model_id: str,
+    model_revision: str,
 ) -> dict[str, Any]:
     from transformers import get_linear_schedule_with_warmup
 
     ner_template = NER_TEMPLATE.read_text(encoding="utf-8")
     re_template = RE_TEMPLATE.read_text(encoding="utf-8")
+    training_format = BARE_TRAINING_FORMAT if bare else TEMPLATED_TRAINING_FORMAT
     schedule = build_training_schedule(prepared, seed, regime)
     widest = preflight_training_schedule(
         tokenizer,
@@ -1067,6 +1159,7 @@ def train_adapter(
         output_dir,
         ner_template,
         re_template,
+        bare,
     )
     schedule_sha256 = sha256_file(output_dir / "training_schedule.jsonl")
     total_steps = len(schedule)
@@ -1094,9 +1187,10 @@ def train_adapter(
         resume_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         expected_resume_metadata = {
             "training_regime": regime,
+            "training_format": training_format,
             "schedule_sha256": schedule_sha256,
             "git_commit": git_commit(),
-            "qlora_signature": qlora_signature(),
+            "qlora_signature": qlora_signature(model_id, model_revision),
         }
         for key, expected in expected_resume_metadata.items():
             if resume_metadata.get(key) != expected:
@@ -1110,7 +1204,12 @@ def train_adapter(
     device = parameters[0].device
     model.train()
     widest_encoded = encode_training_batch(
-        tokenizer, widest, eligible, ner_template, re_template
+        tokenizer,
+        widest,
+        eligible,
+        ner_template,
+        re_template,
+        bare=bare,
     )
     smoke_batch = tensor_batch(torch, widest_encoded, device, pad_token_id)
     parameter_snapshot = [parameter.detach().cpu().clone() for parameter in parameters]
@@ -1208,11 +1307,15 @@ def train_adapter(
             raise RuntimeError("checkpoint JSON and trainer-state steps disagree")
         if trainer_state["training_regime"] != regime:
             raise RuntimeError("trainer-state regime mismatch")
+        if trainer_state.get("training_format") != training_format:
+            raise RuntimeError("trainer-state training-format mismatch")
         if trainer_state["schedule_sha256"] != schedule_sha256:
             raise RuntimeError("trainer-state schedule mismatch")
         if trainer_state["git_commit"] != git_commit():
             raise RuntimeError("trainer-state commit mismatch")
-        if trainer_state["qlora_signature"] != qlora_signature():
+        if trainer_state["qlora_signature"] != qlora_signature(
+            model_id, model_revision
+        ):
             raise RuntimeError("trainer-state QLoRA signature mismatch")
         optimizer.load_state_dict(trainer_state["optimizer"])
         scheduler.load_state_dict(trainer_state["scheduler"])
@@ -1268,7 +1371,12 @@ def train_adapter(
             log_stream.write(json.dumps(previous, sort_keys=True) + "\n")
         for scheduled in schedule[completed_steps:]:
             encoded = encode_training_batch(
-                tokenizer, scheduled, eligible, ner_template, re_template
+                tokenizer,
+                scheduled,
+                eligible,
+                ner_template,
+                re_template,
+                bare=bare,
             )
             batch = tensor_batch(torch, encoded, device, pad_token_id)
             learning_rate = float(optimizer.param_groups[0]["lr"])
@@ -1329,6 +1437,9 @@ def train_adapter(
                     scheduler,
                     output_dir,
                     regime,
+                    training_format,
+                    model_id,
+                    model_revision,
                     schedule_sha256,
                     scheduled.optimizer_step,
                     step_rows,
@@ -1352,13 +1463,16 @@ def train_adapter(
     adapter_config = json.loads(
         (adapter_dir / "adapter_config.json").read_text(encoding="utf-8")
     )
-    if adapter_config.get("revision") != MODEL_REVISION:
+    if adapter_config.get("revision") != model_revision:
         raise RuntimeError(
             "saved adapter_config.json does not pin the requested base-model revision"
         )
     result = {
         "optimizer": "torch.optim.AdamW(fused=True)",
         "training_regime": regime,
+        "training_format": training_format,
+        "model_id": model_id,
+        "model_revision": model_revision,
         "optimizer_steps": len(step_rows),
         "task_steps": dict(task_counts),
         "selected_training_records": len(prepared),
@@ -1747,6 +1861,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument(
+        "--model-id",
+        choices=tuple(MODEL_REVISIONS),
+        default=MODEL_ID,
+    )
+    parser.add_argument(
         "--training-regime",
         choices=TRAINING_REGIMES,
         default=PILOT_REGIME,
@@ -1755,6 +1874,11 @@ def parse_args() -> argparse.Namespace:
         "--resume-from",
         type=Path,
         help="resume full-pass training from a completed checkpoint directory",
+    )
+    parser.add_argument(
+        "--bare",
+        action="store_true",
+        help="train on raw task input x followed directly by the gold completion",
     )
     parser.add_argument(
         "--prepare-only",
@@ -1771,6 +1895,10 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         raise ValueError("--resume-from cannot be combined with --prepare-only")
     started_at = utc_now()
     wall_start = time.monotonic()
+    model_revision = MODEL_REVISIONS[args.model_id]
+    training_format = (
+        BARE_TRAINING_FORMAT if args.bare else TEMPLATED_TRAINING_FORMAT
+    )
     targets, eligible = load_pilot_records()
     selected = select_training_examples(eligible, args.seed, args.training_regime)
     prepared = prepare_training_material(
@@ -1779,6 +1907,7 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         output_dir,
         args.seed,
         args.training_regime,
+        args.bare,
     )
     planned_schedule = build_training_schedule(
         prepared, args.seed, args.training_regime
@@ -1825,8 +1954,9 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
     )
     common = {
         "schema_version": 1,
-        "experiment": f"Qwen3.8-27B GSAP-ERE 4-bit QLoRA {args.training_regime}",
+        "experiment": f"{args.model_id} GSAP-ERE 4-bit QLoRA {args.training_regime}",
         "training_regime": args.training_regime,
+        "training_format": training_format,
         "status": "prepared" if args.prepare_only else "running",
         "target": {
             "document_id": TARGET_DOCUMENT_ID,
@@ -1836,6 +1966,8 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             "excluded_from_evaluation_demonstrations": True,
         },
         "training": {
+            "format": training_format,
+            "bare": args.bare,
             "optimizer_steps": len(planned_schedule),
             "task_steps": planned_task_steps,
             "selected_training_records": len(prepared),
@@ -1879,9 +2011,13 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             ),
         },
         "model": {
-            "id": MODEL_ID,
-            "revision": MODEL_REVISION,
-            "class": "Qwen3_5ForCausalLM",
+            "id": args.model_id,
+            "revision": model_revision,
+            "class": (
+                "Qwen3ForCausalLM"
+                if args.model_id == "Qwen/Qwen3-14B-Base"
+                else "Qwen3_5ForCausalLM"
+            ),
             "quantized_linear_weight_dtype": "4-bit NF4",
             "non_quantized_base_parameter_dtype": "float32 after k-bit preparation",
             "compute_dtype": "bfloat16",
@@ -1904,6 +2040,7 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             },
         },
         "evaluation": {
+            "prompt_format": "unchanged few-shot chat prompts",
             "base_variant": "the same 4-bit quantized base with the LoRA adapter disabled",
             "target_sentence_count": len(targets),
             "ner_shots": NER_SHOTS,
@@ -1935,7 +2072,11 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         return
 
     del selected, planned_schedule
-    torch, tokenizer, model, target_report = load_model_and_tokenizer(args.seed)
+    torch, tokenizer, model, target_report = load_model_and_tokenizer(
+        args.seed,
+        args.model_id,
+        model_revision,
+    )
     write_json(output_dir / "targeted_modules.json", target_report)
     if tokenizer.pad_token_id is None:
         raise RuntimeError("tokenizer has no pad token ID")
@@ -1950,6 +2091,9 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
         tokenizer.pad_token_id,
         args.training_regime,
         args.resume_from,
+        args.bare,
+        args.model_id,
+        model_revision,
     )
     model.gradient_checkpointing_disable()
     model.config.use_cache = True

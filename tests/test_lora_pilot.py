@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import lora_pilot
 from paper_llm.inference import Entity
@@ -22,6 +24,7 @@ class FakeTokenizer:
         add_generation_prompt,
         enable_thinking,
     ):
+        self.chat_template_calls = getattr(self, "chat_template_calls", 0) + 1
         self.assertions = (tokenize, add_generation_prompt, enable_thinking)
         return f"USER:{messages[0]['content']}\nASSISTANT:<think></think>\n"
 
@@ -113,6 +116,7 @@ class LoRAPilotTests(unittest.TestCase):
             lora_pilot.RE_TEMPLATE.read_text(encoding="utf-8"),
         )
         self.assertEqual(tokenizer.assertions, (False, True, False))
+        self.assertEqual(tokenizer.chat_template_calls, 1)
         self.assertTrue(
             all(
                 value == -100
@@ -124,6 +128,129 @@ class LoRAPilotTests(unittest.TestCase):
             encoded["input_ids"][encoded["prompt_tokens"] :],
         )
         self.assertEqual(encoded["input_ids"][-1], tokenizer.eos_token_id)
+
+    def test_bare_prompts_are_exactly_x(self):
+        ner_source = next(example for example in self.examples if example.task == "ner")
+        ner_record = self.eligible[ner_source.record_index]
+        self.assertEqual(
+            lora_pilot.training_prompt(
+                ner_source,
+                self.eligible,
+                "unused NER template",
+                "unused RE template",
+                bare=True,
+            ),
+            json.dumps(lora_pilot.indexed_tokens(ner_record), ensure_ascii=False),
+        )
+
+        re_source = next(example for example in self.examples if example.task == "re")
+        re_record = self.eligible[re_source.record_index]
+        self.assertEqual(
+            lora_pilot.training_prompt(
+                re_source,
+                self.eligible,
+                "unused NER template",
+                "unused RE template",
+                bare=True,
+            ),
+            json.dumps(
+                lora_pilot.pair_input(
+                    re_record,
+                    re_source.pair.subject,
+                    re_source.pair.object,
+                ),
+                ensure_ascii=False,
+            ),
+        )
+
+    def test_bare_encoding_has_no_chat_wrapper(self):
+        tokenizer = FakeTokenizer()
+        source = next(example for example in self.examples if example.task == "re")
+        record = self.eligible[source.record_index]
+        example = lora_pilot.PreparedExample(
+            sample_index=1,
+            task="re",
+            stratum=lora_pilot.example_stratum(source),
+            record_key=record.key,
+            source=source,
+        )
+        prompt = json.dumps(
+            lora_pilot.pair_input(
+                record,
+                source.pair.subject,
+                source.pair.object,
+            ),
+            ensure_ascii=False,
+        )
+        completion = lora_pilot.gold_completion(source, self.eligible)
+        encoded = lora_pilot.encode_training_example(
+            tokenizer,
+            example,
+            self.eligible,
+            "unused NER template",
+            "unused RE template",
+            bare=True,
+        )
+        prompt_ids = tokenizer.encode(prompt, add_special_tokens=False)
+        completion_ids = tokenizer.encode(completion, add_special_tokens=False) + [
+            tokenizer.eos_token_id
+        ]
+        self.assertFalse(hasattr(tokenizer, "chat_template_calls"))
+        self.assertEqual(encoded["input_ids"], prompt_ids + completion_ids)
+        self.assertEqual(encoded["labels"], [-100] * len(prompt_ids) + completion_ids)
+
+    def test_cli_accepts_bare_and_supported_model(self):
+        with patch(
+            "sys.argv",
+            [
+                "lora_pilot.py",
+                "--output-dir",
+                "/tmp/output",
+                "--bare",
+                "--model-id",
+                "Qwen/Qwen3-14B-Base",
+            ],
+        ):
+            args = lora_pilot.parse_args()
+        self.assertTrue(args.bare)
+        self.assertEqual(args.model_id, "Qwen/Qwen3-14B-Base")
+
+    def test_bare_prepare_only_records_format_and_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "output"
+            output_dir.mkdir()
+            lora_pilot.run(
+                SimpleNamespace(
+                    resume_from=None,
+                    prepare_only=True,
+                    training_regime=lora_pilot.PILOT_REGIME,
+                    seed=lora_pilot.DEFAULT_SEED,
+                    bare=True,
+                    model_id="Qwen/Qwen3-14B-Base",
+                ),
+                output_dir,
+            )
+            run = json.loads((output_dir / "run.json").read_text())
+            manifest = json.loads((output_dir / "sample_manifest.json").read_text())
+            self.assertEqual(run["status"], "prepared")
+            self.assertEqual(run["training_format"], lora_pilot.BARE_TRAINING_FORMAT)
+            self.assertTrue(run["training"]["bare"])
+            self.assertEqual(run["model"]["id"], "Qwen/Qwen3-14B-Base")
+            self.assertEqual(
+                run["model"]["revision"],
+                lora_pilot.MODEL_REVISIONS["Qwen/Qwen3-14B-Base"],
+            )
+            self.assertEqual(
+                manifest["training_format"], lora_pilot.BARE_TRAINING_FORMAT
+            )
+            with (output_dir / "training_records.jsonl").open() as stream:
+                self.assertTrue(
+                    all(
+                        json.loads(line)["training_format"]
+                        == lora_pilot.BARE_TRAINING_FORMAT
+                        for line in stream
+                    )
+                )
 
     def test_pilot_schedule_is_400_true_batch8_updates(self):
         prepared = []
@@ -280,6 +407,9 @@ class LoRAPilotTests(unittest.TestCase):
                     FakeStateful,
                     output_dir,
                     lora_pilot.FULL_PASS_REGIME,
+                    lora_pilot.TEMPLATED_TRAINING_FORMAT,
+                    lora_pilot.MODEL_ID,
+                    lora_pilot.MODEL_REVISION,
                     "schedule-sha256",
                     step,
                     [],
