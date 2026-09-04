@@ -20,6 +20,7 @@ model_id="${MODEL_ID:-Qwen/Qwen3.8-27B}"
 bare="${BARE:-0}"
 case "${training_regime}" in
   pilot) artifact_name=lora_pilot ;;
+  full-pool-3k) artifact_name=lora_full_pool_3k ;;
   full-pass) artifact_name=lora_full_pass ;;
   *) echo "error: unknown TRAINING_REGIME ${training_regime}" >&2; exit 2 ;;
 esac
@@ -232,6 +233,7 @@ assert manifest["training_regime"] == regime
 assert manifest["training_format"] == expected_format
 assert manifest["serialization"]["model_wrapper"] == expected_model_wrapper
 assert manifest["excluded_document_id"] == run["target"]["document_id"]
+assert manifest["counts"]["selected_manifest_examples"] == training["selected_manifest_examples"]
 assert training["training_regime"] == regime
 assert training["training_format"] == expected_format
 assert training["model_id"] == expected_model_id
@@ -308,41 +310,128 @@ presentations = Counter(
 assert all(len(batch["sample_indices"]) == len(set(batch["sample_indices"])) for batch in schedule)
 assert all(len(batch["strata"]) == 1 if batch["task"] == "ner" else True for batch in schedule)
 training_record_count = 0
+ner_source_counts = Counter()
+entity_classes = Counter()
+re_pair_keys = set()
+relation_classes = Counter()
 with (root / "training_records.jsonl").open() as stream:
     for line in stream:
         row = json.loads(line)
         assert row["document_id"] != run["target"]["document_id"]
         assert row["training_format"] == expected_format
+        if row["task"] == "ner":
+            ner_source_counts[row["record_key"]] += 1
+            entity_classes.update(
+                entity["type"] for entity in row["completion"]["entities"]
+            )
+        else:
+            assert row["task"] == "re"
+            relation_classes[row["completion"]["label"]] += 1
+            re_pair_keys.add(
+                (
+                    row["record_key"],
+                    json.dumps(row["subject"], sort_keys=True),
+                    json.dumps(row["object"], sort_keys=True),
+                )
+            )
         training_record_count += 1
 tokenization_record_count = sum(1 for _ in (root / "tokenization_records.jsonl").open())
 training_log_count = sum(1 for _ in (root / "training_log.jsonl").open())
-assert training_record_count == training["selected_training_records"]
-assert tokenization_record_count == training["unique_training_records"]
+assert training_record_count == training["selected_manifest_examples"]
+assert tokenization_record_count == training["scheduled_manifest_examples"]
 assert training_log_count == training["optimizer_steps"] == len(training["steps"])
 if regime == "pilot":
     assert training["optimizer_steps"] == 400
     assert training["task_steps"] == {"ner": 200, "re": 200}
-    assert training["unique_training_records"] == 200
-    assert training["selected_training_records"] == 200
+    assert training["scheduled_manifest_examples"] == 200
+    assert training["selected_manifest_examples"] == 200
     assert training["dropped_training_records"] == dropped["count"] == 0
     assert training["example_presentations"] == 3200
     assert training["task_presentations"] == {"ner": 1600, "re": 1600}
     assert training["stratum_presentations"] == {"ner": 1600, "nil": 800, "positive": 800}
-    assert training["record_repetitions"] == 16
+    assert training["manifest_example_repetitions"] == 16
     assert training["actual_batch_size_counts"] == {"8": 400}
     assert len(schedule) == 400
     assert set(presentations.values()) == {16}
+elif regime == "full-pool-3k":
+    assert training["optimizer_steps"] == 6000
+    assert training["task_steps"] == {"ner": 3000, "re": 3000}
+    assert training["scheduled_manifest_examples"] == 48000
+    assert training["selected_manifest_examples"] == 48000
+    assert training["dropped_training_records"] == dropped["count"] == 0
+    assert training["example_presentations"] == 48000
+    assert training["task_presentations"] == {"ner": 24000, "re": 24000}
+    assert training["stratum_presentations"] == {
+        "ner": 24000,
+        "nil": 12000,
+        "positive": 12000,
+    }
+    assert training["manifest_example_repetitions"] == 1
+    assert training["unique_ner_source_sentences"] == 20712
+    assert training["maximum_ner_source_presentations"] == 2
+    assert training["unique_re_source_pairs"] == 24000
+    assert manifest["counts"]["unique_ner_source_sentences"] == 20712
+    assert manifest["counts"]["maximum_ner_source_presentations"] == 2
+    assert manifest["counts"]["unique_re_source_pairs"] == 24000
+    assert Counter(ner_source_counts.values()) == {1: 17424, 2: 3288}
+    assert len(re_pair_keys) == 24000
+    assert relation_classes["NIL"] == 12000
+    assert sum(
+        count for label, count in relation_classes.items() if label != "NIL"
+    ) == 12000
+    assert set(entity_classes) == {
+        "MLModel",
+        "MLModelGeneric",
+        "ModelArchitecture",
+        "Method",
+        "Dataset",
+        "DatasetGeneric",
+        "DataSource",
+        "ReferenceLink",
+        "Task",
+        "URL",
+    }
+    assert set(relation_classes) == {
+        "NIL",
+        "appliedTo",
+        "architecture",
+        "benchmarkFor",
+        "citation",
+        "coreference",
+        "evaluatedOn",
+        "generatedBy",
+        "hasInstanceType",
+        "isBasedOn",
+        "isComparedTo",
+        "isHyponymOf",
+        "isPartOf",
+        "size",
+        "sourcedFrom",
+        "trainedOn",
+        "transformedFrom",
+        "usedFor",
+        "url",
+    }
+    assert training["actual_batch_size_counts"] == {"8": 6000}
+    assert len(schedule) == 6000
+    assert set(presentations.values()) == {1}
+    assert all(
+        len(batch["record_keys"]) == len(set(batch["record_keys"]))
+        for batch in schedule
+        if batch["task"] == "ner"
+    )
 else:
+    assert regime == "full-pass"
     assert training["optimizer_steps"] == 26312
     assert training["task_steps"] == {"ner": 2589, "re": 23723}
-    assert training["selected_training_records"] == 210498
-    assert training["unique_training_records"] == 210496
+    assert training["selected_manifest_examples"] == 210498
+    assert training["scheduled_manifest_examples"] == 210496
     assert training["dropped_training_records"] == dropped["count"] == 2
     assert [row["sample_index"] for row in dropped["records"]] == [57757, 118283]
     assert training["example_presentations"] == 210496
     assert training["task_presentations"] == {"ner": 20712, "re": 189784}
     assert training["stratum_presentations"] == {"ner": 20712, "nil": 159508, "positive": 30276}
-    assert training["record_repetitions"] == 1
+    assert training["manifest_example_repetitions"] == 1
     assert training["actual_batch_size_counts"] == {"8": 26312}
     assert len(schedule) == 26312
     assert set(presentations.values()) == {1}

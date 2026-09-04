@@ -271,11 +271,14 @@ class LoRAPilotTests(unittest.TestCase):
                 "--bare",
                 "--model-id",
                 "Qwen/Qwen3-14B-Base",
+                "--training-regime",
+                "full-pool-3k",
             ],
         ):
             args = lora_pilot.parse_args()
         self.assertTrue(args.bare)
         self.assertEqual(args.model_id, "Qwen/Qwen3-14B-Base")
+        self.assertEqual(args.training_regime, lora_pilot.FULL_POOL_3K_REGIME)
 
     def test_bare_prepare_only_records_format_and_model(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -455,6 +458,86 @@ class LoRAPilotTests(unittest.TestCase):
         self.assertEqual(
             Counter(row.stratum for batch in schedule for row in batch.rows),
             {"ner": 1600, "positive": 800, "nil": 800},
+        )
+
+    def test_full_pool_3k_draws_24000_examples_per_task(self):
+        sources = lora_pilot.sample_full_pool_3k_examples(
+            self.eligible, lora_pilot.DEFAULT_SEED
+        )
+        self.assertEqual(
+            Counter(source.task for source in sources),
+            {"ner": 24_000, "re": 24_000},
+        )
+        self.assertTrue(
+            all(
+                self.eligible[source.record_index].doc_id
+                != lora_pilot.TARGET_DOCUMENT_ID
+                for source in sources
+            )
+        )
+
+        ner_sources = [
+            source.record_index for source in sources if source.task == "ner"
+        ]
+        ner_multiplicities = Counter(Counter(ner_sources).values())
+        self.assertEqual(len(set(ner_sources)), len(self.eligible))
+        self.assertEqual(ner_multiplicities, {1: 17_424, 2: 3_288})
+        self.assertEqual(
+            {
+                entity.type
+                for index in ner_sources
+                for entity in self.eligible[index].entities
+            },
+            set(lora_pilot.ENTITY_ORDER),
+        )
+
+        re_pairs = [source.pair for source in sources if source.task == "re"]
+        self.assertNotIn(None, re_pairs)
+        self.assertEqual(len(set(re_pairs)), 24_000)
+        self.assertEqual(
+            Counter("NIL" if pair.label == "NIL" else "positive" for pair in re_pairs),
+            {"positive": 12_000, "NIL": 12_000},
+        )
+        self.assertEqual(
+            {pair.label for pair in re_pairs},
+            set(lora_pilot.RELATION_ORDER) | {"NIL"},
+        )
+
+        prepared = [
+            lora_pilot.PreparedExample(
+                sample_index=index,
+                task=source.task,
+                stratum=lora_pilot.example_stratum(source),
+                record_key=self.eligible[source.record_index].key,
+                source=source,
+            )
+            for index, source in enumerate(sources, start=1)
+        ]
+        schedule = lora_pilot.build_training_schedule(
+            prepared,
+            lora_pilot.DEFAULT_SEED,
+            lora_pilot.FULL_POOL_3K_REGIME,
+        )
+        self.assertEqual(len(schedule), 6_000)
+        self.assertEqual(
+            Counter(batch.task for batch in schedule),
+            {"ner": 3_000, "re": 3_000},
+        )
+        self.assertTrue(all(len(batch.rows) == 8 for batch in schedule))
+        self.assertEqual(
+            set(
+                Counter(
+                    row.sample_index for batch in schedule for row in batch.rows
+                ).values()
+            ),
+            {1},
+        )
+        self.assertTrue(
+            all(
+                len({row.source.record_index for row in batch.rows}) == 8
+                for batch in schedule
+                if batch.task == "ner"
+            )
         )
 
     def test_full_pass_counts_and_drops_terminal_remainder(self):

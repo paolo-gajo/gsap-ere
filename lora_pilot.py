@@ -60,8 +60,9 @@ TARGET_DOCUMENT_ID = DEFAULT_DOCUMENT_ID
 
 DEFAULT_SEED = 42
 PILOT_REGIME = "pilot"
+FULL_POOL_3K_REGIME = "full-pool-3k"
 FULL_PASS_REGIME = "full-pass"
-TRAINING_REGIMES = (PILOT_REGIME, FULL_PASS_REGIME)
+TRAINING_REGIMES = (PILOT_REGIME, FULL_POOL_3K_REGIME, FULL_PASS_REGIME)
 TEMPLATED_TRAINING_FORMAT = "templated-chat"
 BARE_TRAINING_FORMAT = "bare"
 NER_SAMPLE_COUNT = 100
@@ -71,9 +72,13 @@ RE_SAMPLE_COUNT = RE_POSITIVE_SAMPLE_COUNT + RE_NIL_SAMPLE_COUNT
 NER_STEPS = 200
 RE_STEPS = 200
 TOTAL_STEPS = NER_STEPS + RE_STEPS
+FULL_POOL_STEPS_PER_TASK = 3_000
 
 LEARNING_RATE = 2e-4
 MICRO_BATCH_SIZE = 8
+FULL_POOL_PRESENTATIONS_PER_TASK = FULL_POOL_STEPS_PER_TASK * MICRO_BATCH_SIZE
+FULL_POOL_RE_POSITIVE_COUNT = FULL_POOL_PRESENTATIONS_PER_TASK // 2
+FULL_POOL_RE_NIL_COUNT = FULL_POOL_PRESENTATIONS_PER_TASK // 2
 GRADIENT_ACCUMULATION_STEPS = 1
 WARMUP_STEPS = 5
 WEIGHT_DECAY = 0.01
@@ -285,6 +290,81 @@ def sample_pilot_examples(
     return examples
 
 
+def sample_full_pool_3k_examples(
+    eligible: list[SentenceRecord], seed: int
+) -> list[PilotExample]:
+    if len(eligible) >= FULL_POOL_PRESENTATIONS_PER_TASK:
+        raise RuntimeError(
+            "full-pool-3k expects the NER stream to require a second shuffled epoch"
+        )
+
+    ner_rng = random.Random(f"{seed}:full-pool-3k:ner")
+    ner_indices: list[int] = []
+    while len(ner_indices) < FULL_POOL_PRESENTATIONS_PER_TASK:
+        epoch = list(range(len(eligible)))
+        ner_rng.shuffle(epoch)
+        remaining = FULL_POOL_PRESENTATIONS_PER_TASK - len(ner_indices)
+        ner_indices.extend(epoch[:remaining])
+
+    pair_examples, _ = build_pair_examples(eligible)
+    positive_pairs = [pair for pair in pair_examples if pair.label != "NIL"]
+    nil_pairs = [pair for pair in pair_examples if pair.label == "NIL"]
+    if len(positive_pairs) < FULL_POOL_RE_POSITIVE_COUNT:
+        raise RuntimeError("not enough positive RE pairs for full-pool-3k sampling")
+    if len(nil_pairs) < FULL_POOL_RE_NIL_COUNT:
+        raise RuntimeError("not enough NIL RE pairs for full-pool-3k sampling")
+
+    positive_rng = random.Random(f"{seed}:full-pool-3k:re-positive")
+    nil_rng = random.Random(f"{seed}:full-pool-3k:re-nil")
+    positive_rng.shuffle(positive_pairs)
+    nil_rng.shuffle(nil_pairs)
+    selected_pairs = (
+        positive_pairs[:FULL_POOL_RE_POSITIVE_COUNT]
+        + nil_pairs[:FULL_POOL_RE_NIL_COUNT]
+    )
+    random.Random(f"{seed}:full-pool-3k:re-order").shuffle(selected_pairs)
+
+    examples = [PilotExample("ner", index) for index in ner_indices]
+    examples.extend(
+        PilotExample("re", pair.record_index, pair) for pair in selected_pairs
+    )
+
+    ner_source_counts = Counter(ner_indices)
+    expected_second_epoch = FULL_POOL_PRESENTATIONS_PER_TASK - len(eligible)
+    if len(ner_source_counts) != len(eligible):
+        raise AssertionError("full-pool-3k NER did not traverse the complete pool")
+    if Counter(ner_source_counts.values()) != {
+        1: len(eligible) - expected_second_epoch,
+        2: expected_second_epoch,
+    }:
+        raise AssertionError("wrong full-pool-3k NER source multiplicities")
+    if len(set(selected_pairs)) != FULL_POOL_PRESENTATIONS_PER_TASK:
+        raise AssertionError("full-pool-3k RE pairs are not unique")
+    if Counter(example_stratum(example) for example in examples) != {
+        "ner": FULL_POOL_PRESENTATIONS_PER_TASK,
+        "positive": FULL_POOL_RE_POSITIVE_COUNT,
+        "nil": FULL_POOL_RE_NIL_COUNT,
+    }:
+        raise AssertionError("wrong full-pool-3k task strata")
+    presented_entity_types = {
+        entity.type for index in ner_indices for entity in eligible[index].entities
+    }
+    if presented_entity_types != set(ENTITY_ORDER):
+        missing = sorted(set(ENTITY_ORDER) - presented_entity_types)
+        raise RuntimeError(f"full-pool-3k NER is missing classes: {missing}")
+    presented_relation_labels = {pair.label for pair in selected_pairs}
+    expected_relation_labels = set(RELATION_ORDER) | {"NIL"}
+    if presented_relation_labels != expected_relation_labels:
+        missing = sorted(expected_relation_labels - presented_relation_labels)
+        raise RuntimeError(f"full-pool-3k RE is missing classes: {missing}")
+    if any(
+        eligible[example.record_index].doc_id == TARGET_DOCUMENT_ID
+        for example in examples
+    ):
+        raise AssertionError("target document leaked into full-pool-3k examples")
+    return examples
+
+
 def full_pass_examples(
     eligible: list[SentenceRecord], seed: int
 ) -> list[PilotExample]:
@@ -312,6 +392,8 @@ def select_training_examples(
 ) -> list[PilotExample]:
     if regime == PILOT_REGIME:
         return sample_pilot_examples(eligible, seed)
+    if regime == FULL_POOL_3K_REGIME:
+        return sample_full_pool_3k_examples(eligible, seed)
     if regime == FULL_PASS_REGIME:
         return full_pass_examples(eligible, seed)
     raise ValueError(f"unknown training regime: {regime}")
@@ -450,6 +532,48 @@ def prepare_training_material(
         stream.flush()
         os.fsync(stream.fileno())
 
+    ner_sources = Counter(
+        example.source.record_index for example in prepared if example.task == "ner"
+    )
+    re_pairs = [
+        example.source.pair
+        for example in prepared
+        if example.task == "re" and example.source.pair is not None
+    ]
+    entity_class_counts = Counter(
+        entity.type
+        for example in prepared
+        if example.task == "ner"
+        for entity in eligible[example.source.record_index].entities
+    )
+    relation_class_counts = Counter(pair.label for pair in re_pairs)
+    if regime == PILOT_REGIME:
+        selection = {
+            "ner": "100 distinct uniformly sampled eligible sentences",
+            "re_positive": "50 distinct sentences with one uniformly sampled positive ordered pair",
+            "re_nil": "50 further distinct sentences with one uniformly sampled NIL ordered pair",
+            "sample_order": "deterministically shuffled",
+        }
+    elif regime == FULL_POOL_3K_REGIME:
+        selection = {
+            "ner": (
+                "24,000 sentence presentations from fresh seeded shuffles of the "
+                "complete eligible pool; every sentence is used before reuse"
+            ),
+            "re_positive": "12,000 distinct positive ordered pairs sampled without replacement",
+            "re_nil": "12,000 distinct NIL ordered pairs sampled without replacement",
+            "sample_order": "task-local deterministic seeded streams",
+        }
+    elif regime == FULL_PASS_REGIME:
+        selection = {
+            "ner": "every eligible stored sentence exactly once, including empty-entity sentences",
+            "re": "every ordered pair of distinct gold entities exactly once",
+            "nil": "ordered pairs without an annotated relation are labeled NIL",
+            "sample_order": "deterministically shuffled",
+        }
+    else:
+        raise ValueError(f"unknown training regime: {regime}")
+
     write_json(
         output_dir / "sample_manifest.json",
         {
@@ -474,29 +598,25 @@ def prepare_training_material(
                 "supervision": "completion tokens only",
             },
             "excluded_document_id": TARGET_DOCUMENT_ID,
-            "selection": (
-                {
-                    "ner": "100 distinct uniformly sampled eligible sentences",
-                    "re_positive": "50 distinct sentences with one uniformly sampled positive ordered pair",
-                    "re_nil": "50 further distinct sentences with one uniformly sampled NIL ordered pair",
-                    "sample_order": "deterministically shuffled",
-                }
-                if regime == PILOT_REGIME
-                else {
-                    "ner": "every eligible stored sentence exactly once, including empty-entity sentences",
-                    "re": "every ordered pair of distinct gold entities exactly once",
-                    "nil": "ordered pairs without an annotated relation are labeled NIL",
-                    "sample_order": "deterministically shuffled",
-                }
-            ),
+            "selection": selection,
             "counts": {
-                "unique_training_records": len(prepared),
+                "selected_manifest_examples": len(prepared),
                 "ner": task_counts["ner"],
                 "re": task_counts["re"],
                 "re_positive": stratum_counts["positive"],
                 "re_nil": stratum_counts["nil"],
+                "unique_ner_source_sentences": len(ner_sources),
+                "maximum_ner_source_presentations": max(ner_sources.values()),
+                "unique_re_source_pairs": len(set(re_pairs)),
+                "unique_re_source_sentences": len(
+                    {pair.record_index for pair in re_pairs}
+                ),
                 "eligible_sentences": len(eligible),
                 "eligible_documents": len({record.doc_id for record in eligible}),
+            },
+            "class_counts": {
+                "entity_mentions": dict(entity_class_counts),
+                "relation_pairs": dict(relation_class_counts),
             },
             "inputs": {
                 "train_data": str(TRAIN_DATA),
@@ -805,6 +925,18 @@ def build_training_schedule(
                 tuple(stream[offset : offset + MICRO_BATCH_SIZE])
                 for offset in range(0, len(stream), MICRO_BATCH_SIZE)
             ]
+    elif regime == FULL_POOL_3K_REGIME:
+        expected = {
+            "ner": FULL_POOL_PRESENTATIONS_PER_TASK,
+            "re": FULL_POOL_PRESENTATIONS_PER_TASK,
+        }
+        if pool_sizes != expected:
+            raise AssertionError(f"wrong full-pool-3k task pools: {pool_sizes}")
+        for task, pool in pools.items():
+            task_batches[task] = [
+                tuple(pool[offset : offset + MICRO_BATCH_SIZE])
+                for offset in range(0, len(pool), MICRO_BATCH_SIZE)
+            ]
     elif regime == FULL_PASS_REGIME:
         for task, pool in pools.items():
             shuffled = list(pool)
@@ -821,7 +953,7 @@ def build_training_schedule(
 
     schedule: list[TrainingBatch] = []
     task_counts: Counter[str] = Counter()
-    if regime == PILOT_REGIME:
+    if regime in {PILOT_REGIME, FULL_POOL_3K_REGIME}:
         task_order = [
             task
             for pair_index in range(max(task_limits.values()))
@@ -861,6 +993,10 @@ def build_training_schedule(
             raise AssertionError("a scheduled batch repeats a training record")
         if {row.task for row in rows} != {task}:
             raise AssertionError("a scheduled batch mixes tasks")
+        if regime == FULL_POOL_3K_REGIME and task == "ner":
+            source_indices = [row.source.record_index for row in rows]
+            if len(source_indices) != len(set(source_indices)):
+                raise AssertionError("a full-pool-3k NER batch repeats a source sentence")
         schedule.append(
             TrainingBatch(
                 optimizer_step=len(schedule) + 1,
@@ -883,8 +1019,10 @@ def build_training_schedule(
     dropped_ids = prepared_ids - scheduled_ids
     if scheduled_ids - prepared_ids:
         raise AssertionError("schedule contains records outside the manifest")
-    expected_dropped = 0 if regime == PILOT_REGIME else sum(
-        len(pool) % MICRO_BATCH_SIZE for pool in pools.values()
+    expected_dropped = (
+        sum(len(pool) % MICRO_BATCH_SIZE for pool in pools.values())
+        if regime == FULL_PASS_REGIME
+        else 0
     )
     if len(dropped_ids) != expected_dropped:
         raise AssertionError(f"wrong dropped-record count: {len(dropped_ids)}")
@@ -1207,6 +1345,19 @@ def train_adapter(
     expected_stratum_presentations = dict(
         Counter(row.stratum for batch in schedule for row in batch.rows)
     )
+    ner_source_presentations = Counter(
+        row.source.record_index
+        for batch in schedule
+        if batch.task == "ner"
+        for row in batch.rows
+    )
+    re_source_pairs = {
+        row.source.pair
+        for batch in schedule
+        if batch.task == "re"
+        for row in batch.rows
+        if row.source.pair is not None
+    }
     sample_presentations = Counter(
         row.sample_index for batch in schedule for row in batch.rows
     )
@@ -1517,13 +1668,18 @@ def train_adapter(
         "model_revision": model_revision,
         "optimizer_steps": len(step_rows),
         "task_steps": dict(task_counts),
-        "selected_training_records": len(prepared),
-        "unique_training_records": len(sample_presentations),
+        "selected_manifest_examples": len(prepared),
+        "scheduled_manifest_examples": len(sample_presentations),
         "dropped_training_records": len(prepared) - len(sample_presentations),
         "example_presentations": sum(task_presentations.values()),
         "task_presentations": dict(task_presentations),
         "stratum_presentations": dict(stratum_presentations),
-        "record_repetitions": record_repetitions,
+        "manifest_example_repetitions": record_repetitions,
+        "unique_ner_source_sentences": len(ner_source_presentations),
+        "maximum_ner_source_presentations": max(
+            ner_source_presentations.values()
+        ),
+        "unique_re_source_pairs": len(re_source_pairs),
         "resumed_from": str(resume_from) if resume_from is not None else None,
         "resumed_completed_steps": (
             int(resume_metadata["completed_steps"])
@@ -1996,8 +2152,8 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
     dropped = [
         row for row in prepared if row.sample_index not in scheduled_sample_indices
     ]
-    if args.training_regime == PILOT_REGIME and dropped:
-        raise AssertionError("pilot schedule dropped training records")
+    if args.training_regime in {PILOT_REGIME, FULL_POOL_3K_REGIME} and dropped:
+        raise AssertionError(f"{args.training_regime} schedule dropped training records")
     if args.training_regime == FULL_PASS_REGIME and (
         len(dropped) != 2 or {row.task for row in dropped} != {"re"}
     ):
@@ -2005,7 +2161,11 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
     write_json(
         output_dir / "dropped_training_records.json",
         {
-            "policy": "drop_last=True for each task-homogeneous stream",
+            "policy": (
+                "drop_last=True for each task-homogeneous stream"
+                if args.training_regime == FULL_PASS_REGIME
+                else "no selected records dropped"
+            ),
             "count": len(dropped),
             "records": [
                 {
@@ -2030,6 +2190,19 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
     planned_stratum_presentations = dict(
         Counter(row.stratum for batch in planned_schedule for row in batch.rows)
     )
+    planned_ner_sources = Counter(
+        row.source.record_index
+        for batch in planned_schedule
+        if batch.task == "ner"
+        for row in batch.rows
+    )
+    planned_re_pairs = [
+        row.source.pair
+        for batch in planned_schedule
+        if batch.task == "re"
+        for row in batch.rows
+        if row.source.pair is not None
+    ]
     common = {
         "schema_version": 1,
         "experiment": f"{args.model_id} GSAP-ERE 4-bit QLoRA {args.training_regime}",
@@ -2053,16 +2226,26 @@ def run(args: argparse.Namespace, output_dir: Path) -> None:
             ),
             "optimizer_steps": len(planned_schedule),
             "task_steps": planned_task_steps,
-            "selected_training_records": len(prepared),
-            "trained_unique_records": len(scheduled_sample_indices),
+            "selected_manifest_examples": len(prepared),
+            "scheduled_manifest_examples": len(scheduled_sample_indices),
             "dropped_training_records": len(dropped),
             "example_presentations": sum(planned_task_presentations.values()),
             "task_presentations": planned_task_presentations,
             "stratum_presentations": planned_stratum_presentations,
-            "record_repetitions": (
+            "manifest_example_repetitions": (
                 len(planned_schedule) * MICRO_BATCH_SIZE // len(prepared)
                 if args.training_regime == PILOT_REGIME
                 else 1
+            ),
+            "unique_ner_source_sentences": len(planned_ner_sources),
+            "maximum_ner_source_presentations": max(
+                planned_ner_sources.values()
+            ),
+            "unique_re_source_pairs": len(set(planned_re_pairs)),
+            "re_sampling_balance": (
+                "12,000 positive and 12,000 NIL pairs without replacement"
+                if args.training_regime == FULL_POOL_3K_REGIME
+                else None
             ),
             "seed": args.seed,
             "learning_rate": LEARNING_RATE,
