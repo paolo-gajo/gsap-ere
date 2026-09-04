@@ -1226,10 +1226,22 @@ def load_checkpoint_adapter(model: Any, checkpoint_dir: Path) -> None:
     if not adapter_dir.is_dir():
         raise RuntimeError(f"resume checkpoint has no adapter: {checkpoint_dir}")
     state_dict = load_peft_weights(str(adapter_dir), device="cpu")
+    if not state_dict:
+        raise RuntimeError(f"resume checkpoint has an empty adapter: {checkpoint_dir}")
     load_result = set_peft_model_state_dict(model, state_dict)
     if load_result.unexpected_keys:
         raise RuntimeError(
             f"unexpected adapter keys in resume checkpoint: {load_result.unexpected_keys[:10]}"
+        )
+    missing_adapter_keys = [
+        key
+        for key in load_result.missing_keys
+        if ".lora_A." in key or ".lora_B." in key
+    ]
+    if missing_adapter_keys:
+        raise RuntimeError(
+            "missing adapter keys in resume checkpoint: "
+            f"{missing_adapter_keys[:10]}"
         )
 
 
@@ -1785,6 +1797,20 @@ def build_prediction(
     predictions_by_sentence: list[list[Entity]],
     relation_rows: list[tuple[int, int, int, str]],
 ) -> dict[str, Any]:
+    if not targets:
+        raise ValueError("build_prediction requires at least one target sentence")
+    if len(targets) != len(predictions_by_sentence):
+        raise ValueError(
+            "target and prediction sentence counts differ: "
+            f"{len(targets)} != {len(predictions_by_sentence)}"
+        )
+    document_ids = {target.doc_id for target in targets}
+    if len(document_ids) != 1:
+        raise ValueError(
+            "build_prediction requires targets from exactly one document, found "
+            f"{sorted(document_ids)}"
+        )
+    document_id = next(iter(document_ids))
     output_entities: list[dict[str, Any]] = []
     ids_by_position: dict[tuple[int, int], str] = {}
     for target_index, (target, entities) in enumerate(zip(targets, predictions_by_sentence)):
@@ -1809,7 +1835,7 @@ def build_prediction(
             head, tail = tail, head
         relation_set.add((head, label, tail))
     return {
-        "document_id": TARGET_DOCUMENT_ID,
+        "document_id": document_id,
         "entities": output_entities,
         "relations": [
             {"head": head, "type": label, "tail": tail}
@@ -1832,7 +1858,16 @@ def evaluate_variant(
     output_dir: Path,
     bare: bool,
     model_id: str,
+    gold_data: Path = TRAIN_DATA,
 ) -> dict[str, Any]:
+    if not targets:
+        raise ValueError("evaluate_variant requires at least one target sentence")
+    target_document_ids = {target.doc_id for target in targets}
+    if len(target_document_ids) != 1:
+        raise ValueError(
+            "evaluate_variant requires exactly one document, found "
+            f"{sorted(target_document_ids)}"
+        )
     variant_dir = output_dir / name
     variant_dir.mkdir(parents=True, exist_ok=False)
     trace_path = variant_dir / "trace.jsonl"
@@ -2016,7 +2051,7 @@ def evaluate_variant(
             "schema_version": 1,
             "retriever": None if bare else RETRIEVER_ID,
             "retriever_revision": None if bare else RETRIEVER_REVISION,
-            "excluded_document_id": TARGET_DOCUMENT_ID,
+            "excluded_document_id": targets[0].doc_id,
             "selection": (
                 "none; bare x-only evaluation"
                 if bare
@@ -2036,7 +2071,7 @@ def evaluate_variant(
             str(REPO_ROOT / "paper_llm" / "evaluate.py"),
             str(prediction_path),
             "--gold",
-            str(TRAIN_DATA),
+            str(gold_data),
             "--output",
             str(score_path),
         ],

@@ -125,7 +125,7 @@ def parse_args() -> argparse.Namespace:
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("prediction", type=Path)
+    parser.add_argument("prediction", nargs="+", type=Path)
     parser.add_argument("--gold", type=Path, default=repo_root / "data" / "train.jsonl")
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
@@ -133,17 +133,27 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    prediction = json.loads(args.prediction.read_text(encoding="utf-8"))
-    document_id = prediction.get("document_id")
-    if not isinstance(document_id, str) or not document_id:
-        raise ValueError("prediction has no valid document_id")
-    gold = load_document(args.gold, document_id)
-    scorer_document = build_scorer_document(gold, prediction)
+    document_ids = []
+    scorer_documents = []
+    for prediction_path in args.prediction:
+        prediction = json.loads(prediction_path.read_text(encoding="utf-8"))
+        document_id = prediction.get("document_id")
+        if not isinstance(document_id, str) or not document_id:
+            raise ValueError(f"{prediction_path} has no valid document_id")
+        gold = load_document(args.gold, document_id)
+        document_ids.append(document_id)
+        scorer_documents.append(build_scorer_document(gold, prediction))
+
     metrics = gsapere_evaluate(
-        [scorer_document], sym_labels=SYMMETRIC_RELATIONS
+        scorer_documents, sym_labels=SYMMETRIC_RELATIONS
+    )
+    document_metadata = (
+        {"document_id": document_ids[0]}
+        if len(document_ids) == 1
+        else {"document_ids": document_ids}
     )
     result = {
-        "document_id": document_id,
+        **document_metadata,
         "averaging": "micro",
         "matching": "exact token spans and case-sensitive labels",
         "scorer": {
